@@ -1,0 +1,11 @@
+flask
+numpy
+pandas
+matplotlib
+scikit-learn
+scikeras
+yfinance
+scikit-optimize
+scipy
+tensorflow
+joblib

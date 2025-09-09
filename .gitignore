@@ -1,3 +1,4 @@
+# General Python ignores
 __pycache__/
 .ipynb_checkpoints/
 .env
@@ -17,18 +18,25 @@ __pycache__/
 *.jpg
 *.jpeg
 *.pdf
-*.DS_Store
+.DS_Store
+
+# Data and experiment artifacts (kept out of Git)
 data/
 logs/
-past models/
+"past models"/
 
 # Keep source code and important files
 !*.py
 !*.ipynb
 !*.txt
+!*.md
 !*.html
 !*.css
 !*.js
 !Dockerfile
 !README.md
 !.gitignore
+
+# Allow static assets under web apps and docs
+!stockproject/static/**
+!stockproject/templates/**
