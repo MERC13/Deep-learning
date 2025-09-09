@@ -1,0 +1,34 @@
+__pycache__/
+.ipynb_checkpoints/
+.env
+.venv
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.bak
+*.tmp
+*.log
+*.tar.gz
+*.h5
+*.pth
+*.joblib
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.DS_Store
+data/
+logs/
+past models/
+
+# Keep source code and important files
+!*.py
+!*.ipynb
+!*.txt
+!*.html
+!*.css
+!*.js
+!Dockerfile
+!README.md
+!.gitignore
