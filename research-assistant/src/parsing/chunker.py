@@ -34,6 +34,22 @@ def chunk_file(txt_path, out_prefix=None):
         out_records.append(rec)
     return out_records
 
+
+def write_chunks_to_files(txt_path, out_dir: Path | None = None):
+    """Chunk a .txt file and write each chunk as its own .txt file next to the input or in out_dir.
+
+    Output files are named: <base>_chunk_XXX.txt
+    """
+    p = Path(txt_path)
+    out_dir = Path(out_dir) if out_dir else p.parent
+    recs = chunk_file(txt_path)
+    for rec in recs:
+        outp = out_dir / f"{rec['id']}.txt"
+        if outp.exists():
+            continue
+        outp.write_text(rec["text"], encoding="utf-8")
+    return [out_dir / f"{rec['id']}.txt" for rec in recs]
+
 if __name__ == "__main__":
     import sys
     txtfile = sys.argv[1]

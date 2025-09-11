@@ -4,9 +4,11 @@ import feedparser
 import requests
 from urllib.parse import urljoin
 from dotenv import load_dotenv
+from utils.storage import SeenStore
 
 load_dotenv()
 CORPUS_DIR = Path(os.getenv("CORPUS_DIR", "data/raw_pdfs"))
+SEEN_RSS_PATH = Path(os.getenv("SEEN_RSS_PATH", "data/state/arxiv_seen.jsonl"))
 CORPUS_DIR.mkdir(parents=True, exist_ok=True)
 ARXIV_RSS = "http://export.arxiv.org/rss/cs.CL"  # change category or rotate
 
@@ -64,12 +66,19 @@ def save_metadata_and_pdf(meta):
     return meta_path, pdf_path
 
 def run_once():
+    store = SeenStore(SEEN_RSS_PATH)
     entries = fetch_rss_entries(ARXIV_RSS)
+    new_items = []
     for e in entries:
         meta = normalize_arxiv_entry(e)
+        key = meta.get("pdf_url") or meta.get("arxiv_id")
+        if key and not store.contains(key):
+            new_items.append((key, meta))
+    for key, meta in new_items:
         _, pdfp = save_metadata_and_pdf(meta)
         if pdfp:
             print("saved", pdfp)
+            store.add_all([key])
         time.sleep(1)
 
 if __name__ == "__main__":

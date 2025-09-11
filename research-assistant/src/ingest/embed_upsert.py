@@ -1,6 +1,7 @@
 import os, time, json
 from pathlib import Path
 from dotenv import load_dotenv
+from utils.dedupe import filter_new
 
 load_dotenv()
 
@@ -10,6 +11,7 @@ EMBED_DIM = 3072
 
 # --- Directories ---
 CHUNKS_DIR = Path(os.getenv("CHUNKS_DIR", "data/chunks"))
+SEEN_PATH = Path(os.getenv("SEEN_PATH", "data/state/embedded.jsonl"))
 
 
 def _get_openai_client():
@@ -58,16 +60,33 @@ def embed_text(text: str, model: str | None = None):
     return resp.data[0].embedding
 
 def load_chunks_from_txts():
-    """Load plain text files as single chunks (for testing)"""
+    """Load chunk .txt files.
+
+    If any files match *_chunk_*.txt, only those are loaded.
+    Otherwise, every .txt is treated as a single chunk.
+    """
+    all_txts = list(CHUNKS_DIR.glob("*.txt"))
+    chunk_txts = [p for p in all_txts if "_chunk_" in p.stem]
+    target_files = chunk_txts if chunk_txts else all_txts
+
     recs = []
-    for p in CHUNKS_DIR.glob("*.txt"):
+    for p in target_files:
         base = p.stem
         text = p.read_text(encoding="utf-8")
+        if "_chunk_" in base:
+            chunk_id = base
+            try:
+                chunk_idx = int(base.split("_chunk_")[-1])
+            except Exception:
+                chunk_idx = 0
+        else:
+            chunk_id = base + "_chunk_000"
+            chunk_idx = 0
         recs.append({
-            "id": base + "_chunk_000",
+            "id": chunk_id,
             "text": text,
             "source_file": str(p),
-            "chunk_idx": 0
+            "chunk_idx": chunk_idx
         })
     return recs
 
@@ -80,6 +99,8 @@ def upsert_chunks(recs, batch_size=10):
             "source_file": r.get("source_file"),
             "chunk_idx": r.get("chunk_idx"),
             "source_id": r.get("id"),
+            # Storing text can be helpful for quick retrieval (consider size/cost); comment out if undesired
+            "text": r.get("text"),
         }
         vectors.append((r["id"], emb, meta))
         if len(vectors) >= batch_size:
@@ -95,6 +116,8 @@ def upsert_chunks(recs, batch_size=10):
 if __name__ == "__main__":
     try:
         recs = load_chunks_from_txts()
+        # Avoid re-embedding already processed IDs
+        recs = filter_new(recs, key_fn=lambda r: r["id"], seen_path=str(SEEN_PATH))
         upsert_chunks(recs)
         print("Done.")
     except Exception as e:

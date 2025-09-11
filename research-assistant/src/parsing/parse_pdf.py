@@ -19,6 +19,8 @@ def extract_text_with_pymupdf(pdf_path):
 def save_raw_text(pdf_path, text):
     name = Path(pdf_path).stem
     out = CHUNKS_DIR / f"{name}.txt"
+    if out.exists():
+        return out
     with open(out, "w", encoding="utf-8") as f:
         f.write(text)
     return out
