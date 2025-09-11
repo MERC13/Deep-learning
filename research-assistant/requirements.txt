@@ -1,5 +1,10 @@
 numpy
-pandas
-beautifulsoup4
-lxml
 requests
+python-dotenv
+feedparser
+PyMuPDF
+tiktoken
+sendgrid
+openai
+pinecone-client
+pytest
