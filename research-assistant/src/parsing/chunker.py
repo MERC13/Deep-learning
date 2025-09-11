@@ -2,7 +2,10 @@ import os, json
 from pathlib import Path
 import tiktoken
 from dotenv import load_dotenv
+from utils.logging import configure_logging, get_logger
 load_dotenv()
+configure_logging()
+log = get_logger(__name__)
 
 CHUNKS_DIR = Path(os.getenv("CHUNKS_DIR", "data/chunks"))
 CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
@@ -43,11 +46,14 @@ def write_chunks_to_files(txt_path, out_dir: Path | None = None):
     p = Path(txt_path)
     out_dir = Path(out_dir) if out_dir else p.parent
     recs = chunk_file(txt_path)
+    log.info("Chunking file to chunks: %s", txt_path)
     for rec in recs:
         outp = out_dir / f"{rec['id']}.txt"
         if outp.exists():
+            log.debug("Chunk exists, skipping: %s", outp)
             continue
         outp.write_text(rec["text"], encoding="utf-8")
+        log.debug("Wrote chunk: %s", outp)
     return [out_dir / f"{rec['id']}.txt" for rec in recs]
 
 if __name__ == "__main__":

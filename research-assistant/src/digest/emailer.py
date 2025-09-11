@@ -1,8 +1,11 @@
 import os
 from typing import Iterable, List, Optional
 from dotenv import load_dotenv
+from utils.logging import configure_logging, get_logger
 
 load_dotenv()
+configure_logging()
+log = get_logger(__name__)
 
 FROM_EMAIL = os.getenv("FROM_EMAIL")
 # Support TO_EMAILS (comma-separated) or legacy TO_EMAIL
@@ -44,7 +47,7 @@ def send_email(
         raise ValueError("No recipients provided. Set TO_EMAILS or pass 'to'.")
 
     if is_dry_run:
-        print(f"[dry-run] Would send email from {FROM_EMAIL} to {recipients} with subject: {subject}")
+        log.info("[dry-run] Would send email from %s to %s with subject: %s", FROM_EMAIL, recipients, subject)
         return None
 
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
@@ -56,6 +59,7 @@ def send_email(
         from sendgrid import SendGridAPIClient  # type: ignore
         from sendgrid.helpers.mail import Mail  # type: ignore
     except Exception as e:
+        log.error("sendgrid import failed: %s", e)
         raise ImportError("sendgrid package is required to send email. Install with 'pip install sendgrid'.") from e
 
     message = Mail(
@@ -68,11 +72,10 @@ def send_email(
     try:
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         response = sg.send(message)
-        print("email sent:", response.status_code)
+        log.info("email sent: status=%s", getattr(response, 'status_code', 'unknown'))
         return response
     except Exception as e:
-        # Try to surface SendGrid error details if available
         status = getattr(e, "status_code", None)
         body = getattr(e, "body", None)
-        print("email err:", status if status else "", body if body else e)
+        log.error("email error status=%s body=%s exc=%s", status, body, e)
         raise

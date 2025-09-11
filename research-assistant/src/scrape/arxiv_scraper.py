@@ -4,9 +4,12 @@ import feedparser
 import requests
 from urllib.parse import urljoin
 from dotenv import load_dotenv
+from utils.logging import configure_logging, get_logger
 from utils.storage import SeenStore
 
 load_dotenv()
+configure_logging()
+log = get_logger(__name__)
 CORPUS_DIR = Path(os.getenv("CORPUS_DIR", "data/raw_pdfs"))
 SEEN_RSS_PATH = Path(os.getenv("SEEN_RSS_PATH", "data/state/arxiv_seen.jsonl"))
 CORPUS_DIR.mkdir(parents=True, exist_ok=True)
@@ -54,12 +57,12 @@ def save_metadata_and_pdf(meta):
     pdf_path = CORPUS_DIR / f"{safe_name}.pdf"
     meta_path = CORPUS_DIR / f"{safe_name}.json"
     if pdf_path.exists():
-        print("already downloaded:", pdf_path)
+        log.debug("already downloaded: %s", pdf_path)
         return meta_path, pdf_path
     try:
         download_pdf(meta["pdf_url"], pdf_path)
     except Exception as e:
-        print("download error", e)
+        log.warning("download error for %s: %s", meta.get("pdf_url"), e)
         return None, None
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
@@ -67,6 +70,7 @@ def save_metadata_and_pdf(meta):
 
 def run_once():
     store = SeenStore(SEEN_RSS_PATH)
+    log.info("Fetching RSS: %s", ARXIV_RSS)
     entries = fetch_rss_entries(ARXIV_RSS)
     new_items = []
     for e in entries:
@@ -74,10 +78,11 @@ def run_once():
         key = meta.get("pdf_url") or meta.get("arxiv_id")
         if key and not store.contains(key):
             new_items.append((key, meta))
+    log.info("New entries to download: %d", len(new_items))
     for key, meta in new_items:
         _, pdfp = save_metadata_and_pdf(meta)
         if pdfp:
-            print("saved", pdfp)
+            log.info("saved %s", pdfp)
             store.add_all([key])
         time.sleep(1)
 

@@ -5,6 +5,6 @@ feedparser
 PyMuPDF
 tiktoken
 sendgrid
-openai
 pinecone-client
 pytest
+sentence-transformers

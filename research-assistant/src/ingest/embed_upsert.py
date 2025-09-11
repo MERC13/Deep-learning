@@ -1,33 +1,51 @@
-import os, time, json
+import os, time
 from pathlib import Path
 from dotenv import load_dotenv
 from utils.dedupe import filter_new
+from utils.logging import configure_logging, get_logger
 
 load_dotenv()
+configure_logging()
+log = get_logger(__name__)
 
-# --- Constants ---
-EMBED_MODEL_DEFAULT = "text-embedding-3-large"
-EMBED_DIM = 3072
+# --- Constants / Config ---
+# Single embedding model (Sentence-Transformers)
+SBERT_MODEL_DEFAULT = os.getenv("SBERT_MODEL", "all-MiniLM-L6-v2")  # ~384 dims
 
 # --- Directories ---
 CHUNKS_DIR = Path(os.getenv("CHUNKS_DIR", "data/chunks"))
 SEEN_PATH = Path(os.getenv("SEEN_PATH", "data/state/embedded.jsonl"))
 
+_SBERT_MODEL_CACHE = None
 
-def _get_openai_client():
-    """Create OpenAI client if API key is set; otherwise raise ValueError."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY not set")
+
+def _get_sbert_model():
+    """Load a Sentence-Transformers model lazily and cache it."""
+    global _SBERT_MODEL_CACHE
+    if _SBERT_MODEL_CACHE is not None:
+        return _SBERT_MODEL_CACHE
     try:
-        import openai  # type: ignore
+        from sentence_transformers import SentenceTransformer
     except Exception as e:
-        raise ImportError("openai package is required. Install with 'pip install openai'.") from e
-    return openai.OpenAI(api_key=api_key)
+        raise ImportError("sentence-transformers is required for EMBED_BACKEND=sbert. Install with 'pip install sentence-transformers'.") from e
+    model_name = SBERT_MODEL_DEFAULT
+    model = SentenceTransformer(model_name)
+    _SBERT_MODEL_CACHE = model
+    return model
 
 
-def _get_pinecone_index():
-    """Return Pinecone index object, creating the index if needed."""
+def _embedding_dimension() -> int:
+    """Return embedding dimension for the configured SBERT model."""
+    model = _get_sbert_model()
+    try:
+        return int(model.get_sentence_embedding_dimension())
+    except Exception:
+        vec = model.encode(["dim probe"], normalize_embeddings=False)[0]
+        return len(vec)
+
+
+def _get_pinecone_index(dimension: int):
+    """Return Pinecone index object, creating the index if needed with provided dimension."""
     api_key = os.getenv("PINECONE_API_KEY")
     index_name = os.getenv("PINECONE_INDEX_NAME")
     region = os.getenv("PINECONE_ENVIRONMENT")
@@ -40,24 +58,25 @@ def _get_pinecone_index():
     pc = Pinecone(api_key=api_key)
     existing = [idx["name"] for idx in pc.list_indexes()]
     if index_name not in existing:
+        log.info("Creating Pinecone index %s (dim=%d)", index_name, dimension)
         pc.create_index(
             index_name,
-            dimension=EMBED_DIM,
+            dimension=dimension,
             metric="cosine",
             spec=ServerlessSpec(cloud="aws", region=region or "us-east-1"),
         )
         # small delay to ensure index is ready
         time.sleep(2)
+    log.info("Using Pinecone index: %s", index_name)
     return pc.Index(index_name)
 
 
 # --- Functions ---
-def embed_text(text: str, model: str | None = None):
-    """Embed text using OpenAI embeddings API."""
-    client = _get_openai_client()
-    embed_model = model or os.getenv("OPENAI_EMBED_MODEL", EMBED_MODEL_DEFAULT)
-    resp = client.embeddings.create(model=embed_model, input=text)
-    return resp.data[0].embedding
+def embed_text(text: str):
+    """Embed text using Sentence-Transformers only."""
+    sbert = _get_sbert_model()
+    vec = sbert.encode([text], normalize_embeddings=False)[0]
+    return vec.tolist() if hasattr(vec, "tolist") else list(vec)
 
 def load_chunks_from_txts():
     """Load chunk .txt files.
@@ -91,7 +110,9 @@ def load_chunks_from_txts():
     return recs
 
 def upsert_chunks(recs, batch_size=10):
-    index = _get_pinecone_index()
+    # Ensure index has the proper dimension for the SBERT model
+    dim = _embedding_dimension()
+    index = _get_pinecone_index(dimension=dim)
     vectors = []
     for i, r in enumerate(recs):
         emb = embed_text(r["text"])
@@ -105,12 +126,12 @@ def upsert_chunks(recs, batch_size=10):
         vectors.append((r["id"], emb, meta))
         if len(vectors) >= batch_size:
             index.upsert(vectors)
-            print("upserted batch", i)
+            log.info("Upserted batch at i=%d, batch_size=%d", i, len(vectors))
             vectors = []
             time.sleep(0.5)
     if vectors:
         index.upsert(vectors)
-        print("upserted final batch")
+        log.info("Upserted final batch, size=%d", len(vectors))
 
 # --- Entry point ---
 if __name__ == "__main__":
@@ -119,7 +140,7 @@ if __name__ == "__main__":
         # Avoid re-embedding already processed IDs
         recs = filter_new(recs, key_fn=lambda r: r["id"], seen_path=str(SEEN_PATH))
         upsert_chunks(recs)
-        print("Done.")
+        log.info("Done embedding+upsert.")
     except Exception as e:
-        print("Error:", e)
+        log.exception("Error in embed_upsert: %s", e)
         raise

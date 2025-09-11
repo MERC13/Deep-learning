@@ -2,8 +2,11 @@ import os
 from pathlib import Path
 from typing import List, Tuple
 from dotenv import load_dotenv
+from utils.logging import configure_logging, get_logger
 
 load_dotenv()
+configure_logging()
+log = get_logger(__name__)
 
 CHUNKS_DIR = Path(os.getenv("CHUNKS_DIR", "data/chunks"))
 
@@ -54,4 +57,4 @@ def build_digest(limit: int = 10):
 
 if __name__ == "__main__":
 	html, text = build_digest(limit=int(os.getenv("DIGEST_LIMIT", "5")))
-	print("Built digest with lengths:", len(html), len(text))
+	log.info("Built digest with lengths: html=%d text=%d", len(html), len(text))
