@@ -2,8 +2,11 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
 import yfinance as yf
+
+# Constants for preprocessing
+SEQUENCE_LENGTH = 30
+FEATURES = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA_20', 'RSI', 'Returns']
 
 def add_technical_indicators(df):
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
@@ -26,9 +29,8 @@ def dataprocessing(tech_list):
         df = df.sort_index()
         df = add_technical_indicators(df)
         stock_data[stock] = df.dropna()
-    
-    scaler = StandardScaler()
-    data = {}
+
+    scalers = {}
     x_train = {}
     y_train = {}
     x_test = {}
@@ -36,31 +38,48 @@ def dataprocessing(tech_list):
     shape = None
 
     for stock in tech_list:
-        if stock_data[stock].empty:
-            print(f"Error: No data downloaded for {stock}")
-            exit()
+        df = stock_data[stock]
+        if df.empty:
+            raise ValueError(f"No data downloaded for {stock}")
 
-        features = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA_20', 'RSI', 'Returns']
-        data[stock] = stock_data[stock][features].values
-        
-        scaled_data = scaler.fit_transform(data[stock])
-        
-        sequence_length = 30
-        x_temp, y_temp = [], []
+        data_values = df[FEATURES].values
 
-        for i in range(sequence_length, len(scaled_data)):
-            x_temp.append(scaled_data[i-sequence_length:i])
-            y_temp.append(scaled_data[i, 3])
-        
-        x_temp = np.array(x_temp)
-        y_temp = np.array(y_temp)
-        
-        x_train[stock], x_test[stock], y_train[stock], y_test[stock] = train_test_split(
-            x_temp, y_temp, test_size=0.2, random_state=42, shuffle=False
-        )
-        
+        # Chronological split index (80% train, 20% test)
+        split_idx = int(len(data_values) * 0.8)
+
+        # Fit scaler ONLY on training portion to avoid leakage
+        scaler = StandardScaler()
+        scaler.fit(data_values[:split_idx])
+        scalers[stock] = scaler
+
+        # Transform the entire series with train-fitted scaler
+        scaled_data = scaler.transform(data_values)
+
+        # Build sequences over scaled data
+        x_all, y_all = [], []
+        for i in range(SEQUENCE_LENGTH, len(scaled_data)):
+            x_all.append(scaled_data[i - SEQUENCE_LENGTH:i])
+            # target is scaled Close (index 3)
+            y_all.append(scaled_data[i, 3])
+        x_all = np.array(x_all)
+        y_all = np.array(y_all)
+
+        # Align split for sequences
+        split_seq_idx = max(0, split_idx - SEQUENCE_LENGTH)
+        x_train[stock] = x_all[:split_seq_idx]
+        y_train[stock] = y_all[:split_seq_idx]
+        x_test[stock] = x_all[split_seq_idx:]
+        y_test[stock] = y_all[split_seq_idx:]
+
+        # Ensure consistent shape across stocks
         if shape is not None and x_train[stock].shape[1:] != shape:
             raise ValueError(f"Shape mismatch for {stock}: expected {shape}, got {x_train[stock].shape[1:]}")
         shape = x_train[stock].shape[1:]
-        
-    return x_train, y_train, x_test, y_test, shape, scaler
+
+    metadata = {
+        'features': FEATURES,
+        'sequence_length': SEQUENCE_LENGTH,
+        'shape': shape,
+    }
+
+    return x_train, y_train, x_test, y_test, metadata, scalers

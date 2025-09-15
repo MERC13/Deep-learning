@@ -1,38 +1,53 @@
-'''
-Data Caching
-Heatmaps
-Risk Assessment
-LLM to suggest portfolio
-'''
+import os
+import json
+import logging
+import random
+from datetime import datetime
+
 import matplotlib.pyplot as plt
 import numpy as np
+import tensorflow as tf
 from sklearn.metrics import mean_squared_error
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
+from tensorflow.keras.layers import Bidirectional, Dense, Dropout, Input, LSTM, LayerNormalization
 from tensorflow.keras.models import Model, load_model
-from tensorflow.keras.layers import Dense, LSTM, Input, Multiply, Dropout, Bidirectional, LayerNormalization
 from tensorflow.keras.regularizers import l2
-import datetime
-import io
-from scikeras.wrappers import KerasRegressor
-from sklearn.model_selection import train_test_split
+
+# Optional: hyperparameter tuning (kept but disabled by default)
+try:
+    from scikeras.wrappers import KerasRegressor
+    from skopt import BayesSearchCV
+    from skopt.space import Real, Integer
+    HAS_SKOPT = True
+except Exception:
+    HAS_SKOPT = False
+
 from dataprocessing import dataprocessing
-import tensorflow as tf
 import joblib
-import os
-from skopt import BayesSearchCV
-from skopt.space import Real, Integer
-from scipy.interpolate import interp1d
+
+############################
+# Setup & Utilities
+############################
+
+def set_seeds(seed: int = 42):
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
 
 
+def setup_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s'
+    )
 
 
-
-def save_model_and_params(model, params, model_filename, params_filename):
-    model.save(model_filename)
-    joblib.dump(params, params_filename)
-
-
-
+def save_artifacts(model, params, scalers, metadata, model_file, params_file, scalers_file, metadata_file):
+    model.save(model_file)
+    joblib.dump(params, params_file)
+    joblib.dump(scalers, scalers_file)
+    with open(metadata_file, 'w') as f:
+        json.dump(metadata, f)
 
 
 def load_model_and_params(model_filename, params_filename):
@@ -93,45 +108,31 @@ def bayesian_hyperparameter_tuning(x_train, y_train, x_val, y_val):
 
 
 
-def create_multi_task_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
-    inputs = Input(shape=(shape[0], shape[1]))
-    
-    # Shared layers
-    x = LSTM(units, return_sequences=True, 
-             kernel_regularizer=l2(l2_reg), 
+def create_multi_task_model(input_shape, stock_outputs, units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
+    # Keeping this function integrated, but not used by default
+    inputs = Input(shape=input_shape)
+    x = LSTM(units, return_sequences=True,
+             kernel_regularizer=l2(l2_reg),
              recurrent_regularizer=l2(l2_reg))(inputs)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
-    
-    # Attention mechanism
-    attention = Dense(1, activation='tanh', kernel_regularizer=l2(l2_reg))(x)
-    attention = tf.nn.softmax(attention, axis=1)
-    context_vector = Multiply()([x, attention])
-    x = tf.reduce_sum(context_vector, axis=1)
-    
-    # Dense layer
+    # Global average pooling for stability
+    x = tf.keras.layers.GlobalAveragePooling1D()(x)
     x = Dense(units // 2, activation='relu', kernel_regularizer=l2(l2_reg))(x)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
-    
-    # Company-specific output layers
-    outputs = {}
-    for stock in tech_list:
-        safe_name = stock.replace('^', '').replace('.', '_')
-        outputs[stock] = Dense(1, name=f'output_{safe_name}', kernel_regularizer=l2(l2_reg))(x)
-    
-    model = Model(inputs=inputs, outputs=list(outputs.values()))
-    
+    outputs = {s: Dense(1, name=f'output_{s.replace("^", "").replace(".", "_")}',
+                        kernel_regularizer=l2(l2_reg))(x) for s in stock_outputs}
+    model = Model(inputs=inputs, outputs=outputs)
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    
-    model.compile(optimizer=optimizer, loss='mean_squared_error')
+    model.compile(optimizer=optimizer, loss={k: 'mean_squared_error' for k in outputs.keys()})
     return model
 
 
 
 
-def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
-    inputs = Input(shape=(shape[0], shape[1]))
+def create_model(input_shape, units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
+    inputs = Input(shape=input_shape)
     
     # Bidirectional LSTM layers
     x = Bidirectional(LSTM(units, return_sequences=True, 
@@ -172,28 +173,33 @@ def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
 
 
 
-def create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian=False, multi_task=False):
+def create_or_load_model(MODEL_FILE, PARAMS_FILE, input_shape, tech_list, bayesian=False, multi_task=False):
     if os.path.exists(MODEL_FILE) and os.path.exists(PARAMS_FILE):
-        print("Loading existing model and parameters...")
+        logging.info("Loading existing model and parameters...")
         best_model, best_params = load_model_and_params(MODEL_FILE, PARAMS_FILE)
     elif bayesian:
-        print("No existing model found. Running Bayesian hyperparameter tuning...")
-        x_train_tune, x_val, y_train_tune, y_val = train_test_split(
-            x_train[tech_list[0]], y_train[tech_list[0]], test_size=0.2, random_state=42
-        )
-        best_params = bayesian_hyperparameter_tuning(x_train_tune, y_train_tune, x_val, y_val)
-        if multi_task:
-            best_model = create_multi_task_model(units=best_params['units'],
-                                     learning_rate=best_params['learning_rate'],
-                                     dropout_rate=best_params['dropout_rate'],
-                                     l2_reg=best_params['l2_reg'])
+        if not HAS_SKOPT:
+            logging.warning("Bayesian tuning requested but skopt/scikeras not available. Falling back to defaults.")
+            best_params = None
         else:
-            best_model = create_model(units=best_params['model__units'],
-                                  learning_rate=best_params['model__learning_rate'],
-                                  dropout_rate=best_params['model__dropout_rate'],
-                                  l2_reg=best_params['model__l2_reg'])
-            
-        save_model_and_params(best_model, best_params, MODEL_FILE, PARAMS_FILE)
+            logging.info("No existing model found. Running Bayesian hyperparameter tuning...")
+            # Very basic split for tuning on first stock
+            from sklearn.model_selection import train_test_split
+            x_train_tune, x_val, y_train_tune, y_val = train_test_split(
+                x_train[tech_list[0]], y_train[tech_list[0]], test_size=0.2, random_state=42, shuffle=False
+            )
+            best_params = bayesian_hyperparameter_tuning(x_train_tune, y_train_tune, x_val, y_val)
+        if multi_task:
+            p = best_params or {'units': 64, 'learning_rate': 0.005, 'dropout_rate': 0.5, 'l2_reg': 0.2}
+            best_model = create_multi_task_model(input_shape, tech_list,
+                                                 units=p['units'], learning_rate=p['learning_rate'],
+                                                 dropout_rate=p['dropout_rate'], l2_reg=p['l2_reg'])
+        else:
+            p = best_params or {'units': 64, 'learning_rate': 0.005, 'dropout_rate': 0.5, 'l2_reg': 0.2}
+            best_model = create_model(input_shape,
+                                      units=p['units'], learning_rate=p['learning_rate'],
+                                      dropout_rate=p['dropout_rate'], l2_reg=p['l2_reg'])
+        save_artifacts(best_model, p, scalers, metadata, MODEL_FILE, PARAMS_FILE, SCALERS_FILE, METADATA_FILE)
     else:
         default_params = {
             'units': 64,
@@ -201,22 +207,18 @@ def create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian=False, multi_t
             'dropout_rate': 0.5,
             'l2_reg': 0.2
         }
-        print("No existing model found. Using default parameters...")
-        best_params = default_params
+        logging.info("No existing model found. Using default parameters...")
+        p = default_params
         if multi_task:
-            best_model = create_multi_task_model(units=best_params['units'],
-                                     learning_rate=best_params['learning_rate'],
-                                     dropout_rate=best_params['dropout_rate'],
-                                     l2_reg=best_params['l2_reg'])
+            best_model = create_multi_task_model(input_shape, tech_list,
+                                                 units=p['units'], learning_rate=p['learning_rate'],
+                                                 dropout_rate=p['dropout_rate'], l2_reg=p['l2_reg'])
         else:
-            best_model = create_model(units=best_params['units'],
-                                  learning_rate=best_params['learning_rate'],
-                                  dropout_rate=best_params['dropout_rate'],
-                                  l2_reg=best_params['l2_reg'])
-        
-        save_model_and_params(best_model, best_params, MODEL_FILE, PARAMS_FILE)
-    
-    return best_model, best_params
+            best_model = create_model(input_shape,
+                                      units=p['units'], learning_rate=p['learning_rate'],
+                                      dropout_rate=p['dropout_rate'], l2_reg=p['l2_reg'])
+        save_artifacts(best_model, p, scalers, metadata, MODEL_FILE, PARAMS_FILE, SCALERS_FILE, METADATA_FILE)
+    return best_model, p
 
 
 
@@ -235,7 +237,7 @@ def plot_predictions(y_true, y_pred, name, rmse):
              verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
     
     plt.tight_layout()
-    plt.savefig(f'static/{name}_prediction.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'static/{name}.png', dpi=300, bbox_inches='tight')
     plt.close()
 
 
@@ -257,45 +259,9 @@ def plot_learning_curves(history, stock):
     
     
 
-# Add this new function to create custom callbacks
-def create_distribution_callback():
-    class DistributionCallback(tf.keras.callbacks.Callback):
-        def __init__(self, log_dir):
-            super().__init__()
-            self.log_dir = log_dir
-            self.writer = tf.summary.create_file_writer(log_dir)
-        
-        def on_epoch_end(self, epoch, logs=None):
-            with self.writer.as_default():
-                # Log activation distributions
-                for layer in self.model.layers:
-                    if hasattr(layer, 'output'):
-                        try:
-                            act_output = tf.keras.backend.get_value(layer.output)
-                            tf.summary.histogram(f'{layer.name}_activations', act_output, step=epoch)
-                        except:
-                            continue
-                
-                # Log gradient distributions using GradientTape
-                sample_data = next(iter(tf.data.Dataset.from_tensor_slices(
-                    (self.model.input, self.model.output)).batch(32)))
-                
-                with tf.GradientTape() as tape:
-                    predictions = self.model(sample_data[0])
-                    loss = self.model.compiled_loss(sample_data[1], predictions)
-                
-                weights = self.model.trainable_weights
-                grads = tape.gradient(loss, weights)
-                
-                for w, g in zip(weights, grads):
-                    if g is not None:
-                        # Gradient distribution
-                        tf.summary.histogram(f'{w.name}_gradient', g, step=epoch)
-                        # Ratio of gradients to weights
-                        ratio = tf.abs(g) / (tf.abs(w) + 1e-8)
-                        tf.summary.histogram(f'{w.name}_gradient_ratio', ratio, step=epoch)
-    
-    return DistributionCallback
+############################
+# Training script (main)
+############################
 
 
 
@@ -320,70 +286,72 @@ def create_distribution_callback():
 
 
 
-# data processing
-tech_list = ['^DJI'] #['AAPL', 'GOOG', 'MSFT', 'AMZN']
-x_train, y_train, x_test, y_test, shape, scaler = dataprocessing(tech_list)
+if __name__ == "__main__":
+    setup_logging()
+    set_seeds(42)
 
-# model building
-model = KerasRegressor(build_fn=create_model, verbose=0)
+    # Data processing
+    tech_list = ['^DJI']  # extend as needed
+    logging.info(f"Preparing data for: {tech_list}")
+    x_train, y_train, x_test, y_test, metadata, scalers = dataprocessing(tech_list)
+    input_shape = metadata['shape']
 
-MODEL_FILE = 'best_stock_model.h5'
-PARAMS_FILE = 'best_model_params.joblib'
-bayesian = False
-multi_task = False
+    # Filenames
+    MODEL_FILE = 'best_stock_model.h5'
+    PARAMS_FILE = 'best_model_params.joblib'
+    SCALERS_FILE = 'scalers.joblib'
+    METADATA_FILE = 'preprocess_metadata.json'
+    bayesian = False
+    multi_task = False
 
-best_model, best_params = create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian, multi_task)
+    # Build or load model
+    best_model, best_params = create_or_load_model(MODEL_FILE, PARAMS_FILE, input_shape, tech_list, bayesian, multi_task)
 
-early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
-# Replace the training loop with this updated version
-log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1,
-                                 write_graph=True, write_images=True,
-                                 update_freq='epoch')
-distribution_callback = create_distribution_callback()(log_dir=log_dir)
+    log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1, write_graph=True, write_images=True)
 
-for i, stock in enumerate(tech_list):
-    history = best_model.fit(x_train[stock], y_train[stock], 
-                           batch_size=64, 
-                           epochs=100, 
-                           validation_data=(x_test[stock], y_test[stock]),
-                           callbacks=[early_stop, 
-                                    tensorboard_callback,
-                                    distribution_callback], 
-                           verbose=1)
-    # ... rest of your code ...
-    
-    # plotting
-    plot_learning_curves(history, stock)
+    # Train per stock (single-task)
+    for stock in tech_list:
+        logging.info(f"Training for {stock} with {x_train[stock].shape[0]} samples (val/test: {x_test[stock].shape[0]})")
+        history = best_model.fit(
+            x_train[stock], y_train[stock],
+            batch_size=64,
+            epochs=100,
+            validation_data=(x_test[stock], y_test[stock]),
+            callbacks=[early_stop, tensorboard_callback],
+            verbose=1
+        )
 
-    # Modify these lines
-    train_predictions = best_model.predict(x_train[stock])
-    test_predictions = best_model.predict(x_test[stock])
+        # Plots
+        plot_learning_curves(history, stock)
 
-    # If the model is multi-task, select the appropriate output
-    if multi_task:
-        train_predictions = train_predictions[:, i]
-        test_predictions = test_predictions[:, i]
+        # Predictions and inverse-transform using stock-specific scaler
+        def inverse_transform_close(data_1d, scaler, n_features):
+            tmp = np.zeros((len(data_1d), n_features))
+            tmp[:, 3] = data_1d.flatten()
+            return scaler.inverse_transform(tmp)[:, 3]
 
-    def inverse_transform_data(data, scaler, shape):
-        data_feature = np.zeros((len(data), shape[1]))
-        data_feature[:, 3] = data.flatten()
-        return scaler.inverse_transform(data_feature)[:, 3]
+        scaler = scalers[stock]
+        n_features = input_shape[1]
+        train_pred = best_model.predict(x_train[stock])
+        test_pred = best_model.predict(x_test[stock])
 
-    train_predictions_inv = inverse_transform_data(train_predictions, scaler, shape)
-    test_predictions_inv = inverse_transform_data(test_predictions, scaler, shape)
-    y_train_inv = inverse_transform_data(y_train[stock], scaler, shape)
-    y_test_inv = inverse_transform_data(y_test[stock], scaler, shape)
+        y_train_inv = inverse_transform_close(y_train[stock], scaler, n_features)
+        y_test_inv = inverse_transform_close(y_test[stock], scaler, n_features)
+        train_pred_inv = inverse_transform_close(train_pred, scaler, n_features)
+        test_pred_inv = inverse_transform_close(test_pred, scaler, n_features)
 
-    train_rmse = np.sqrt(mean_squared_error(y_train_inv, train_predictions_inv))
-    test_rmse = np.sqrt(mean_squared_error(y_test_inv, test_predictions_inv))
+        train_rmse = float(np.sqrt(mean_squared_error(y_train_inv, train_pred_inv)))
+        test_rmse = float(np.sqrt(mean_squared_error(y_test_inv, test_pred_inv)))
+        logging.info(f"{stock} Train RMSE: {train_rmse:.2f} | Test RMSE: {test_rmse:.2f}")
 
-    plot_predictions(y_train_inv, train_predictions_inv, f"{stock}_train", train_rmse)
-    plot_predictions(y_test_inv, test_predictions_inv, f"{stock}_test", test_rmse)
+        # Save prediction plots with consistent names
+        safe = stock.replace('^', '').replace('.', '_')
+        plot_predictions(y_train_inv, train_pred_inv, f"{safe}_train_prediction", train_rmse)
+        plot_predictions(y_test_inv, test_pred_inv, f"{safe}_test_prediction", test_rmse)
 
-    print(f'Train RMSE for {stock}: {train_rmse:.2f}')
-    print(f'Test RMSE for {stock}: {test_rmse:.2f}')
-
-# Save model
-best_model.save(MODEL_FILE)
+    # Save artifacts at the end
+    save_artifacts(best_model, best_params, scalers, metadata, MODEL_FILE, PARAMS_FILE, SCALERS_FILE, METADATA_FILE)
+    logging.info("Training completed and artifacts saved.")

@@ -28,9 +28,13 @@
                 {% for graph in graphs %}
                 <div class="box">
                     <h3>{{ graph.title }}</h3>
-                    <canvas id="chart-{{ loop.index }}" width="400" height="200"></canvas>
+                    <img class="stock-predictions" src="{{ graph.url }}" alt="{{ graph.title }}">
                 </div>
                 {% endfor %}
+            </div>
+            <div class="box">
+                <h3>Recent Closes vs Next Prediction</h3>
+                <canvas id="prediction-chart" width="600" height="250"></canvas>
             </div>
         </section>
     </main>
