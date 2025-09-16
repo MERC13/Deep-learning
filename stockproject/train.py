@@ -193,7 +193,7 @@ if __name__ == "__main__":
     set_seeds(42)
 
     # Data processing
-    tech_list = ['^DJI']  # extend as needed
+    tech_list = ['AAPL']  # extend as needed
     logging.info(f"Preparing data for: {tech_list}")
     x_train, y_train, x_test, y_test, metadata, scalers = dataprocessing(tech_list)
     input_shape = metadata['shape']
@@ -219,7 +219,7 @@ if __name__ == "__main__":
         history = best_model.fit(
             x_train[stock], y_train[stock],
             batch_size=64,
-            epochs=100,
+            epochs=10,
             validation_data=(x_test[stock], y_test[stock]),
             callbacks=[early_stop, tensorboard_callback],
             verbose=1

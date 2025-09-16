@@ -1,0 +1,1 @@
+{"shape": [30, 8], "features": ["Open", "High", "Low", "Close", "Volume", "SMA_20", "RSI", "Returns"], "sequence_length": 30}
