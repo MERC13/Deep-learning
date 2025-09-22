@@ -29,3 +29,9 @@ $env:FLASK_APP = "app.py"; python app.py
 ```
 
 App runs on http://localhost:5001
+
+## MISC
+Use to oerwrite the model
+```
+$env:FORCE_NEW_MODEL = '1'
+```

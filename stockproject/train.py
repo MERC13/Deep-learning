@@ -46,57 +46,49 @@ def load_model_and_params(model_filename, params_filename):
     return model, params
 
 
-def create_model(input_shape, units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
+def create_model(input_shape, units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.005):
     inputs = Input(shape=input_shape)
-    
-    # Bidirectional LSTM layers
-    x = Bidirectional(LSTM(units, return_sequences=True, 
-                           kernel_regularizer=l2(l2_reg), 
-                           recurrent_regularizer=l2(l2_reg)))(inputs)
-    x = LayerNormalization()(x)
-    x = Dropout(dropout_rate)(x)
-    
-    x = Bidirectional(LSTM(units // 2, return_sequences=True, 
-                           kernel_regularizer=l2(l2_reg), 
+    x = Dropout(dropout_rate)(inputs)  # Add dropout to input
+
+    x = Bidirectional(LSTM(units, return_sequences=True,
+                           kernel_regularizer=l2(l2_reg),
                            recurrent_regularizer=l2(l2_reg)))(x)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
-    
-    # Global average pooling
-    x = tf.keras.layers.GlobalAveragePooling1D()(x)
-    
-    # Dense layers
-    x = Dense(units // 2, activation='relu', kernel_regularizer=l2(l2_reg))(x)
+
+    x = Bidirectional(LSTM(units // 2, return_sequences=False,
+                           kernel_regularizer=l2(l2_reg),
+                           recurrent_regularizer=l2(l2_reg)))(x)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
-    
+
     x = Dense(units // 4, activation='relu', kernel_regularizer=l2(l2_reg))(x)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
-    
-    # Output layer
+
     outputs = Dense(1, kernel_regularizer=l2(l2_reg))(x)
-    
     model = Model(inputs=inputs, outputs=outputs)
-    
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    
-    model.compile(optimizer=optimizer, loss='mean_squared_error')
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, clipnorm=1.0)
+    model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mae'])
     return model
 
 
 def create_or_load_model(MODEL_FILE, PARAMS_FILE, input_shape):
-    if os.path.exists(MODEL_FILE) and os.path.exists(PARAMS_FILE):
+    force_new = os.getenv("FORCE_NEW_MODEL", "0").lower() in ("1", "true", "yes")
+    if not force_new and os.path.exists(MODEL_FILE) and os.path.exists(PARAMS_FILE):
         logging.info("Loading existing model and parameters...")
         best_model, best_params = load_model_and_params(MODEL_FILE, PARAMS_FILE)
         return best_model, best_params
+    if force_new:
+        logging.info("FORCE_NEW_MODEL set - creating a fresh model with default parameters")
     # Defaults when no saved model/params are present
     default_params = {
         'units': 64,
-        'learning_rate': 0.005,
-        'dropout_rate': 0.5,
-        'l2_reg': 0.2
+        'learning_rate': 0.001,
+        'dropout_rate': 0.2,
+        'l2_reg': 0.005
     }
+
     logging.info("No existing model found. Using default parameters...")
     best_model = create_model(input_shape,
                               units=default_params['units'],
@@ -169,11 +161,13 @@ if __name__ == "__main__":
     # Train per stock (single-task)
     for stock in tech_list:
         logging.info(f"Training for {stock} with {x_train[stock].shape[0]} samples (val/test: {x_test[stock].shape[0]})")
+        # Use a validation split from the training data instead of test to avoid leaking test into training decisions
         history = best_model.fit(
             x_train[stock], y_train[stock],
             batch_size=64,
-            epochs=10,
-            validation_data=(x_test[stock], y_test[stock]),
+            epochs=50,
+            validation_split=0.1,
+            shuffle=True,
             callbacks=[early_stop, tensorboard_callback],
             verbose=1
         )
@@ -182,20 +176,22 @@ if __name__ == "__main__":
         plot_learning_curves(history, stock)
 
         # Predictions and inverse-transform using stock-specific scaler
-        def inverse_transform_close(data_1d, scaler, n_features):
+        # Use metadata-derived target index to avoid coupling to feature order
+        target_idx = metadata['features'].index('Close')
+        def inverse_transform_close(data_1d, scaler, n_features, target_index):
             tmp = np.zeros((len(data_1d), n_features))
-            tmp[:, 3] = data_1d.flatten()
-            return scaler.inverse_transform(tmp)[:, 3]
+            tmp[:, target_index] = data_1d.flatten()
+            return scaler.inverse_transform(tmp)[:, target_index]
 
         scaler = scalers[stock]
         n_features = input_shape[1]
         train_pred = best_model.predict(x_train[stock])
         test_pred = best_model.predict(x_test[stock])
 
-        y_train_inv = inverse_transform_close(y_train[stock], scaler, n_features)
-        y_test_inv = inverse_transform_close(y_test[stock], scaler, n_features)
-        train_pred_inv = inverse_transform_close(train_pred, scaler, n_features)
-        test_pred_inv = inverse_transform_close(test_pred, scaler, n_features)
+        y_train_inv = inverse_transform_close(y_train[stock], scaler, n_features, target_idx)
+        y_test_inv = inverse_transform_close(y_test[stock], scaler, n_features, target_idx)
+        train_pred_inv = inverse_transform_close(train_pred, scaler, n_features, target_idx)
+        test_pred_inv = inverse_transform_close(test_pred, scaler, n_features, target_idx)
 
         train_rmse = float(np.sqrt(mean_squared_error(y_train_inv, train_pred_inv)))
         test_rmse = float(np.sqrt(mean_squared_error(y_test_inv, test_pred_inv)))
