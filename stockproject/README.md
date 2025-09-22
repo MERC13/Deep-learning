@@ -11,7 +11,8 @@ Stock price forecasting pipeline plus a simple Flask app to serve predictions an
 ## Setup
 
 ```powershell
-python -m venv .venv; . .venv\Scripts\Activate.ps1
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 

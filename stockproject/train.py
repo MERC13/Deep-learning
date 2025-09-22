@@ -12,9 +12,6 @@ from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
 from tensorflow.keras.layers import Bidirectional, Dense, Dropout, Input, LSTM, LayerNormalization
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.regularizers import l2
-
-# Hyperparameter tuning dependencies removed for simplicity; can be reintroduced if needed.
-
 from dataprocessing import dataprocessing
 import joblib
 
@@ -47,17 +44,6 @@ def load_model_and_params(model_filename, params_filename):
     model = load_model(model_filename)
     params = joblib.load(params_filename)
     return model, params
-
-
-# Bayesian tuning function removed; consider Optuna or skopt in a separate script if needed.
-
-
-
-
-
-# Multi-task model removed to reduce complexity; reintroduce in a dedicated experiment module if needed.
-
-
 
 
 def create_model(input_shape, units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
@@ -99,9 +85,6 @@ def create_model(input_shape, units=64, learning_rate=0.001, dropout_rate=0.2, l
     return model
 
 
-
-
-
 def create_or_load_model(MODEL_FILE, PARAMS_FILE, input_shape):
     if os.path.exists(MODEL_FILE) and os.path.exists(PARAMS_FILE):
         logging.info("Loading existing model and parameters...")
@@ -123,9 +106,6 @@ def create_or_load_model(MODEL_FILE, PARAMS_FILE, input_shape):
     return best_model, default_params
 
 
-
-
-
 def plot_predictions(y_true, y_pred, name, rmse):
     plt.figure(figsize=(12, 6))
     plt.plot(y_true, label='Actual', linewidth=2)
@@ -141,9 +121,6 @@ def plot_predictions(y_true, y_pred, name, rmse):
     plt.tight_layout()
     plt.savefig(f'static/{name}.png', dpi=300, bbox_inches='tight')
     plt.close()
-
-
-
 
 
 def plot_learning_curves(history, stock):
@@ -165,29 +142,6 @@ def plot_learning_curves(history, stock):
 # Training script (main)
 ############################
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 if __name__ == "__main__":
     setup_logging()
     set_seeds(42)
@@ -203,7 +157,6 @@ if __name__ == "__main__":
     PARAMS_FILE = 'best_model_params.joblib'
     SCALERS_FILE = 'scalers.joblib'
     METADATA_FILE = 'preprocess_metadata.json'
-    # Simplified: no Bayesian tuning, single-task
 
     # Build or load model
     best_model, best_params = create_or_load_model(MODEL_FILE, PARAMS_FILE, input_shape)
@@ -256,3 +209,4 @@ if __name__ == "__main__":
     # Save artifacts at the end
     save_artifacts(best_model, best_params, scalers, metadata, MODEL_FILE, PARAMS_FILE, SCALERS_FILE, METADATA_FILE)
     logging.info("Training completed and artifacts saved.")
+    
