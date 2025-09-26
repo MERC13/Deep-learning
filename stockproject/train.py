@@ -1,12 +1,11 @@
 import os
+import tensorflow as tf
 import json
 import logging
 import random
 from datetime import datetime
-
 import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
 from sklearn.metrics import mean_squared_error
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
 from tensorflow.keras.layers import Bidirectional, Dense, Dropout, Input, LSTM, LayerNormalization
@@ -14,6 +13,9 @@ from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.regularizers import l2
 from dataprocessing import dataprocessing
 import joblib
+
+# Ensure eager execution is enabled
+tf.config.run_functions_eagerly(True)
 
 ############################
 # Setup & Utilities
@@ -74,7 +76,7 @@ def create_model(input_shape, units=64, learning_rate=0.001, dropout_rate=0.2, l
 
 
 def create_or_load_model(MODEL_FILE, PARAMS_FILE, input_shape):
-    force_new = os.getenv("FORCE_NEW_MODEL", "0").lower() in ("1", "true", "yes")
+    force_new = os.getenv("FORCE_NEW_MODEL", "1").lower() in ("1", "true", "yes")
     if not force_new and os.path.exists(MODEL_FILE) and os.path.exists(PARAMS_FILE):
         logging.info("Loading existing model and parameters...")
         best_model, best_params = load_model_and_params(MODEL_FILE, PARAMS_FILE)
