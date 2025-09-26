@@ -14,9 +14,6 @@ from tensorflow.keras.regularizers import l2
 from dataprocessing import dataprocessing
 import joblib
 
-# Ensure eager execution is enabled
-tf.config.run_functions_eagerly(True)
-
 # Optional: accelerator selection and GPU memory behavior
 def configure_accelerator():
     """Configure TensorFlow to use GPU or CPU based on env var USE_GPU.
