@@ -17,6 +17,51 @@ import joblib
 # Ensure eager execution is enabled
 tf.config.run_functions_eagerly(True)
 
+# Optional: accelerator selection and GPU memory behavior
+def configure_accelerator():
+    """Configure TensorFlow to use GPU or CPU based on env var USE_GPU.
+
+    USE_GPU values:
+      - auto (default): prefer GPU if available, else CPU
+      - gpu: require GPU (raise if none)
+      - cpu: force CPU only
+
+    Also enables memory growth on all detected GPUs and can enable mixed
+    precision when MIXED_PRECISION is set to '1'/'true'.
+    """
+    mode = os.getenv("USE_GPU", "cpu").strip().lower()
+
+    gpus = tf.config.list_physical_devices('GPU')
+    if mode == 'cpu':
+        tf.config.set_visible_devices([], 'GPU')
+        logging.info("USE_GPU=cpu -> Forcing CPU. GPUs hidden from TF.")
+    elif mode in ('gpu', 'auto'):
+        if gpus:
+            # Enable memory growth on all GPUs
+            try:
+                for gpu in gpus:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                tf.config.set_visible_devices(gpus, 'GPU')
+                logical_gpus = tf.config.list_logical_devices('GPU')
+                logging.info(f"Using GPU(s): {[g.name for g in logical_gpus]}")
+            except Exception as e:
+                logging.warning(f"Could not set GPU memory growth: {e}")
+        else:
+            if mode == 'gpu':
+                raise RuntimeError("USE_GPU=gpu but no GPU is available to TensorFlow.")
+            logging.info("No GPU detected. Falling back to CPU (USE_GPU=auto).")
+
+    # Optional: Mixed precision
+    mp = os.getenv("MIXED_PRECISION", "0").strip().lower() in ("1", "true", "yes")
+    if mp:
+        try:
+            from tensorflow.keras import mixed_precision as mp_policy
+            policy = mp_policy.Policy('mixed_float16')
+            mp_policy.set_global_policy(policy)
+            logging.info("Enabled mixed precision policy: mixed_float16")
+        except Exception as e:
+            logging.warning(f"Could not enable mixed precision: {e}")
+
 ############################
 # Setup & Utilities
 ############################
@@ -139,6 +184,7 @@ def plot_learning_curves(history, stock):
 if __name__ == "__main__":
     setup_logging()
     set_seeds(42)
+    configure_accelerator()
 
     # Data processing
     tech_list = ['AAPL']  # extend as needed
