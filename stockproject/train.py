@@ -7,8 +7,8 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import mean_squared_error
-from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
-from tensorflow.keras.layers import Bidirectional, Dense, Dropout, Input, LSTM, LayerNormalization
+from tensorflow.keras.callbacks import EarlyStopping, TensorBoard, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras.layers import Bidirectional, Dense, Dropout, Input, LSTM, LayerNormalization, GaussianNoise
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.regularizers import l2
 from dataprocessing import dataprocessing
@@ -90,24 +90,32 @@ def load_model_and_params(model_filename, params_filename):
     return model, params
 
 
-def create_model(input_shape, units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.005):
+def create_model(input_shape, units=64, learning_rate=0.0003, dropout_rate=0.3, l2_reg=0.01):
     inputs = Input(shape=input_shape)
-    x = Dropout(dropout_rate)(inputs)  # Add dropout to input
-
-    x = Bidirectional(LSTM(units, return_sequences=True,
-                           kernel_regularizer=l2(l2_reg),
-                           recurrent_regularizer=l2(l2_reg)))(x)
+    x = GaussianNoise(0.01)(inputs)
+    x = Bidirectional(LSTM(
+        units,
+        return_sequences=True,
+        dropout=0.2,
+        recurrent_dropout=0.2,
+        kernel_regularizer=l2(l2_reg),
+        recurrent_regularizer=l2(l2_reg)
+    ))(x)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
 
-    x = Bidirectional(LSTM(units // 2, return_sequences=False,
-                           kernel_regularizer=l2(l2_reg),
-                           recurrent_regularizer=l2(l2_reg)))(x)
+    x = Bidirectional(LSTM(
+        units // 2,
+        return_sequences=False,
+        dropout=0.2,
+        recurrent_dropout=0.2,
+        kernel_regularizer=l2(l2_reg),
+        recurrent_regularizer=l2(l2_reg)
+    ))(x)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
 
     x = Dense(units // 4, activation='relu', kernel_regularizer=l2(l2_reg))(x)
-    x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
 
     outputs = Dense(1, kernel_regularizer=l2(l2_reg))(x)
@@ -128,9 +136,9 @@ def create_or_load_model(MODEL_FILE, PARAMS_FILE, input_shape):
     # Defaults when no saved model/params are present
     default_params = {
         'units': 64,
-        'learning_rate': 0.001,
-        'dropout_rate': 0.2,
-        'l2_reg': 0.005
+        'learning_rate': 0.0003,
+        'dropout_rate': 0.3,
+        'l2_reg': 0.01
     }
 
     logging.info("No existing model found. Using default parameters...")
@@ -170,6 +178,34 @@ def plot_learning_curves(history, stock):
     plt.savefig(f'static/learning_curves_{stock}.png')
     plt.close()
     
+def inverse_transform_close(data, scaler, target_index):
+    """Inverse-transform only the target feature from standardized values.
+
+    Accepts arrays shaped as:
+      - (N,)                        -> already 1D target series
+      - (N, 1)                      -> single feature column
+      - (N, T) or (N, T, 1)         -> sequence outputs; takes last timestep
+    """
+    arr = np.asarray(data)
+    # Reduce sequence outputs to last timestep
+    if arr.ndim == 3:  # (N, T, C)
+        # If last dim is 1, squeeze it; then take last timestep
+        if arr.shape[-1] == 1:
+            arr = arr[:, -1, 0]
+        else:
+            arr = arr[:, -1]
+    if arr.ndim == 2:  # (N, K) -> pick last column if not singleton
+        if arr.shape[1] == 1:
+            arr = arr[:, 0]
+        else:
+            arr = arr[:, -1]
+    # Now arr should be (N,)
+    arr = arr.reshape(-1)
+    # StandardScaler inverse for a single feature: x*scale + mean
+    mean = scaler.mean_[target_index]
+    scale = scaler.scale_[target_index]
+    return arr * scale + mean
+
     
     
     
@@ -184,13 +220,13 @@ if __name__ == "__main__":
     configure_accelerator()
 
     # Data processing
-    tech_list = ['AAPL']  # extend as needed
+    tech_list = ['DJIA']  # extend as needed
     logging.info(f"Preparing data for: {tech_list}")
     x_train, y_train, x_test, y_test, metadata, scalers = dataprocessing(tech_list)
     input_shape = metadata['shape']
 
     # Filenames
-    MODEL_FILE = 'best_stock_model.h5'
+    MODEL_FILE = 'best_DJIA_model.h5'
     PARAMS_FILE = 'best_model_params.joblib'
     SCALERS_FILE = 'scalers.joblib'
     METADATA_FILE = 'preprocess_metadata.json'
@@ -198,7 +234,7 @@ if __name__ == "__main__":
     # Build or load model
     best_model, best_params = create_or_load_model(MODEL_FILE, PARAMS_FILE, input_shape)
 
-    early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    early_stop = EarlyStopping(monitor='val_loss', patience=15, min_delta=1e-4, restore_best_weights=True)
 
     log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
     tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1, write_graph=True, write_images=True)
@@ -207,13 +243,18 @@ if __name__ == "__main__":
     for stock in tech_list:
         logging.info(f"Training for {stock} with {x_train[stock].shape[0]} samples (val/test: {x_test[stock].shape[0]})")
         # Use a validation split from the training data instead of test to avoid leaking test into training decisions
+        # Callbacks to reduce overfitting / improve generalization
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-6, verbose=1)
+        checkpoint_path = f"best_{stock}_model.h5"
+        checkpoint = ModelCheckpoint(checkpoint_path, monitor='val_loss', save_best_only=True, save_weights_only=False, verbose=1)
+
         history = best_model.fit(
             x_train[stock], y_train[stock],
             batch_size=64,
-            epochs=50,
-            validation_split=0.1,
-            shuffle=True,
-            callbacks=[early_stop, tensorboard_callback],
+            epochs=100,
+            validation_split=0.2,
+            shuffle=False,
+            callbacks=[early_stop, reduce_lr, checkpoint, tensorboard_callback],
             verbose=1
         )
 
@@ -223,20 +264,34 @@ if __name__ == "__main__":
         # Predictions and inverse-transform using stock-specific scaler
         # Use metadata-derived target index to avoid coupling to feature order
         target_idx = metadata['features'].index('Close')
-        def inverse_transform_close(data_1d, scaler, n_features, target_index):
-            tmp = np.zeros((len(data_1d), n_features))
-            tmp[:, target_index] = data_1d.flatten()
-            return scaler.inverse_transform(tmp)[:, target_index]
+
+        # Use best checkpointed model if available
+        try:
+            best_model = load_model(f"best_{stock}_model.h5")
+            logging.info(f"Loaded best checkpointed model for {stock}.")
+        except Exception:
+            logging.info(f"No checkpoint found for {stock}, using current model weights.")
 
         scaler = scalers[stock]
-        n_features = input_shape[1]
         train_pred = best_model.predict(x_train[stock])
         test_pred = best_model.predict(x_test[stock])
 
-        y_train_inv = inverse_transform_close(y_train[stock], scaler, n_features, target_idx)
-        y_test_inv = inverse_transform_close(y_test[stock], scaler, n_features, target_idx)
-        train_pred_inv = inverse_transform_close(train_pred, scaler, n_features, target_idx)
-        test_pred_inv = inverse_transform_close(test_pred, scaler, n_features, target_idx)
+        y_train_inv = inverse_transform_close(y_train[stock], scaler, target_idx)
+        y_test_inv = inverse_transform_close(y_test[stock], scaler, target_idx)
+        train_pred_inv = inverse_transform_close(train_pred, scaler, target_idx)
+        test_pred_inv = inverse_transform_close(test_pred, scaler, target_idx)
+
+        # Align lengths if needed (should already match, but guard just in case)
+        if train_pred_inv.shape[0] != y_train_inv.shape[0]:
+            m = min(train_pred_inv.shape[0], y_train_inv.shape[0])
+            logging.warning(f"Train length mismatch (pred={train_pred_inv.shape[0]}, true={y_train_inv.shape[0]}). Trimming to {m}.")
+            train_pred_inv = train_pred_inv[:m]
+            y_train_inv = y_train_inv[:m]
+        if test_pred_inv.shape[0] != y_test_inv.shape[0]:
+            m = min(test_pred_inv.shape[0], y_test_inv.shape[0])
+            logging.warning(f"Test length mismatch (pred={test_pred_inv.shape[0]}, true={y_test_inv.shape[0]}). Trimming to {m}.")
+            test_pred_inv = test_pred_inv[:m]
+            y_test_inv = y_test_inv[:m]
 
         train_rmse = float(np.sqrt(mean_squared_error(y_train_inv, train_pred_inv)))
         test_rmse = float(np.sqrt(mean_squared_error(y_test_inv, test_pred_inv)))

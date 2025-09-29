@@ -154,7 +154,7 @@ def dataprocessing(tech_list: list[str], sequence_length: int = 30):
       sequence_length: int
     """
     end = datetime.now()
-    start = end - timedelta(days=365 * 15)
+    start = end - timedelta(days=365 * 50)
 
     features = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA_20', 'RSI', 'Returns']
     target_index = features.index('Close')
