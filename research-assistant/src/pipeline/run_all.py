@@ -15,7 +15,7 @@ from scrape.arxiv_scraper import run_once as scrape_once
 from parsing.parse_pdf import extract_text_with_pymupdf, save_raw_text
 from parsing.chunker import write_chunks_to_files
 from ingest.embed_upsert import load_chunks_from_txts, upsert_chunks
-from digest.compute_digest import build_digest_html, build_digest_text
+from digest.compute_digest import build_digest_html, build_digest_text, build_summarized_digest
 from digest.emailer import send_email
 
 
@@ -89,11 +89,21 @@ def run_pipeline():
     else:
         log.info("No chunks found to upsert.")
 
-    # 5) Retrieve from Pinecone to build digest (fallback to local chunks)
-    log.info("Step 5/6: retrieving top matches for digest...")
-    top = retrieve_top_k_from_pinecone("latest research", top_k=int(os.getenv("DIGEST_LIMIT", "5")))
-    html = build_digest_html([(i, t) for i, t in top])
-    text = build_digest_text([(i, t) for i, t in top])
+    # 5) Build summarized digest (overall + per-paper)
+    log.info("Step 5/6: building summarized digest...")
+    query = os.getenv("DIGEST_QUERY", "latest research")
+    try:
+        html, text = build_summarized_digest(
+            query=query,
+            top_k=int(os.getenv("DIGEST_LIMIT", "5")),
+            per_paper_sentences=int(os.getenv("DIGEST_PER_PAPER_SENTENCES", "3")),
+            overall_sentences=int(os.getenv("DIGEST_OVERALL_SENTENCES", "6")),
+        )
+    except Exception as e:
+        log.warning("summarized digest failed (%s); falling back to simple digest", e)
+        top = retrieve_top_k_from_pinecone(query, top_k=int(os.getenv("DIGEST_LIMIT", "5")))
+        html = build_digest_html([(i, t) for i, t in top])
+        text = build_digest_text([(i, t) for i, t in top])
 
     # 6) Send email
     log.info("Step 6/6: sending email...")

@@ -24,7 +24,7 @@ $env:PYTHONPATH = 'src'
 $env:DRY_RUN = 'true'
 $env:FROM_EMAIL = 'from@example.com'
 $env:TO_EMAILS = 'to@example.com'
-cd source
+cd src
 python -m pipeline.run_all
 ```
 
