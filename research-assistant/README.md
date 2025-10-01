@@ -10,6 +10,8 @@ WIP: data ingestion, parsing, and utilities for research PDFs. Contains large da
 
 ## Setup
 
+TODO: OLLAMA
+
 ```powershell
 python -m venv .venv; . .venv\Scripts\Activate.ps1
 pip install -r requirements.txt

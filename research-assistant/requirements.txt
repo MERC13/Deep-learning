@@ -8,3 +8,4 @@ sendgrid
 pinecone-client
 pytest
 sentence-transformers
+ollama

@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import requests
 
@@ -10,48 +10,52 @@ log = get_logger(__name__)
 
 
 class LLMClient:
-    """Minimal HTTP-based LLM client (OpenAI-compatible chat API).
+    """Minimal client for Ollama's chat API.
 
     Env vars:
-      - OPENAI_API_KEY: API key (required for provider=openai)
-      - OPENAI_BASE_URL: Optional; defaults to https://api.openai.com/v1
-      - OPENAI_MODEL: Chat model (default: gpt-4o-mini)
+      - OLLAMA_BASE_URL: base URL to the Ollama server (default: http://localhost:11434)
+      - OLLAMA_MODEL: chat model to use
     """
 
     def __init__(self,
-                 api_key: Optional[str] = None,
                  base_url: Optional[str] = None,
                  model: Optional[str] = None,
-                 timeout: float = 60.0):
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+                 timeout: float = 120.0):
+        self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
+        self.model = model or os.getenv("OLLAMA_MODEL", "gpt-oss")
         self.timeout = timeout
-        if not self.api_key:
-            raise ValueError("OPENAI_API_KEY is required for LLM summarization")
 
     def chat(self, messages: List[Dict[str, str]], max_tokens: int = 512, temperature: float = 0.2) -> str:
-        url = self.base_url.rstrip("/") + "/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        """Send chat messages to Ollama using /api/chat with stream=false.
+
+        Notes:
+        - Ollama's token control is `num_predict`.
+        - Options are under the `options` field.
+        """
+        url = self.base_url + "/api/chat"
+        headers = {"Content-Type": "application/json"}
         body = {
             "model": self.model,
             "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
+            "stream": False,
+            "options": {
+                "temperature": float(temperature),
+                "num_predict": int(max_tokens) if max_tokens else -1,
+            },
         }
         resp = requests.post(url, headers=headers, data=json.dumps(body), timeout=self.timeout)
         if resp.status_code != 200:
-            log.error("LLM chat failed: status=%s body=%s", resp.status_code, resp.text[:500])
-            raise RuntimeError(f"LLM chat failed: {resp.status_code}")
+            log.error("Ollama chat failed: status=%s body=%s", resp.status_code, resp.text[:500])
+            raise RuntimeError(f"Ollama chat failed: {resp.status_code}")
         data = resp.json()
         try:
-            return data["choices"][0]["message"]["content"].strip()
+            # For stream=false, Ollama returns a single JSON with `message` containing the assistant reply
+            msg = data.get("message", {})
+            content = (msg or {}).get("content", "")
+            return (content or "").strip()
         except Exception:
-            log.error("Unexpected LLM response: %s", data)
-            raise RuntimeError("Unexpected LLM response shape")
+            log.error("Unexpected Ollama response: %s", data)
+            raise RuntimeError("Unexpected Ollama response shape")
 
 
 def try_build_client() -> Optional[LLMClient]:
