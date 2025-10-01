@@ -33,6 +33,9 @@ atariRL/
 
 1. **Clone or download the project**
 
+**(Optional) Download CUDA**  
+Refer to the [CUDA Quick Start Guide](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html) for installation instructions.
+
 2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt

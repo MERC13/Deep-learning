@@ -32,7 +32,7 @@ class DQNConfig:
     target_update_frequency: int = 10000
     
     # Training settings
-    n_episodes: int = 50
+    n_episodes: int = 100
     max_steps_per_episode: int = 10000
     save_frequency: int = 100
     log_frequency: int = 10
