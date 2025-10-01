@@ -2,39 +2,6 @@
 
 A clean, modular implementation of Deep Q-Network (DQN) for playing Atari games using PyTorch and Gymnasium.
 
-## Key Improvements & Features
-
-This codebase provides a **professional, production-ready** implementation with the following improvements over typical single-file scripts:
-
-### 🏗️ **Modular Architecture**
-- Clean separation into logical modules (`models`, `agents`, `utils`, `configs`)
-- Proper imports with `__init__.py` files
-- Type hints and comprehensive docstrings throughout
-- Clean interfaces between components
-
-### ⚙️ **Configuration Management**
-- Centralized configuration in `configs/config.py`
-- Dataclass-based configuration with validation
-- Easy parameter tuning without code changes
-- Environment-specific settings
-
-### 🎯 **Enhanced Features**
-- **Deep Q-Network**: Convolutional neural network for processing Atari frames
-- **Experience Replay**: Stable training through experience replay buffer
-- **Target Network**: Separate target network for stable Q-learning
-- **Frame Preprocessing**: Grayscale conversion, resizing, and frame stacking
-- **Epsilon-Greedy Exploration**: Decaying exploration strategy
-- **Training Visualization**: Real-time plotting of training metrics
-- **Model Persistence**: Save and load trained models with checkpoints
-- **Evaluation Tools**: Dedicated evaluation script for testing trained agents
-
-### 💻 **Code Quality**
-- Consistent naming conventions and error handling
-- Memory management considerations
-- GPU acceleration support
-- Interrupt handling during training
-- Professional documentation and setup
-
 ## Project Structure
 
 ```
@@ -61,32 +28,6 @@ atariRL/
 ├── evaluate.py                # Model evaluation script
 └── README.md                  # This file
 ```
-
-## Why This Implementation?
-
-### 🔧 **Maintainability**
-- Easy to modify individual components
-- Clear separation of concerns
-- Consistent code style throughout
-- Proper documentation for future reference
-
-### 🚀 **Extensibility**
-- Easy to add new RL algorithms
-- Pluggable components (different networks, buffers, etc.)
-- Environment-agnostic design
-- Configurable hyperparameters
-
-### 🛡️ **Reliability**
-- Error handling and validation
-- Type safety with hints
-- Tested interfaces between components
-- Proper resource management
-
-### 👥 **Usability**
-- Simple command-line interface
-- Clear configuration options
-- Comprehensive documentation
-- Easy installation and setup
 
 ## Installation
 
@@ -192,25 +133,6 @@ Training utilities:
 - Saves metrics to JSON files
 - Provides evaluation functionality
 
-## Training Tips
-
-1. **GPU Acceleration**: The code automatically detects and uses GPU if available
-2. **Memory Requirements**: Training requires significant RAM for the replay buffer
-3. **Training Time**: Full training can take several hours to days depending on hardware
-4. **Hyperparameter Tuning**: Adjust learning rate, epsilon decay, and network architecture as needed
-5. **Early Stopping**: Monitor training plots and stop if performance plateaus
-
-## Results
-
-During training, you'll see:
-- Real-time training metrics printed to console
-- Training plots showing scores, losses, and epsilon decay
-- Saved models at regular intervals
-- Final evaluation results
-
-Expected performance on Breakout:
-- Random agent: ~1-2 points
-- Trained DQN: 200-400+ points (depending on training duration)
 
 ## Customization
 
@@ -236,3 +158,11 @@ Adjust hyperparameters in the configuration:
 learning_rate: float = 5e-5  # Lower for more stable training
 batch_size: int = 64         # Larger for more stable gradients
 ```
+
+## Reference
+@article{farebrother2024cale,
+  title={C{ALE}: Continuous Arcade Learning Environment},
+  author={Jesse Farebrother and Pablo Samuel Castro},
+  journal={Advances in Neural Information Processing Systems},
+  year={2024}
+}

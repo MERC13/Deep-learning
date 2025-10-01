@@ -1,22 +1,22 @@
 # Deep Learning Libraries
-torch>=2.0.0
-torchvision>=0.15.0
+torch
+torchvision
 
 # Reinforcement Learning
-gymnasium[atari,accept-rom-license]>=0.29.0
-ale-py>=0.8.0
+gymnasium
+ale-py
 
 # Data Processing and Computer Vision
-numpy>=1.24.0
-opencv-python>=4.8.0
+numpy
+opencv-python
 
 # Visualization and Plotting
-matplotlib>=3.7.0
+matplotlib
 
 # Additional utilities
-Pillow>=10.0.0
+Pillow
 
 # Optional: Development tools
-black>=23.0.0
-flake8>=6.0.0
-pytest>=7.0.0
+black
+flake8
+pytest
