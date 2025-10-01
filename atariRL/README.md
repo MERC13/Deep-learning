@@ -34,7 +34,7 @@ atariRL/
 1. **Clone or download the project**
 
 **(Optional) Download CUDA**  
-Refer to the [CUDA Quick Start Guide](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html) for installation instructions.
+Refer to the [CUDA Quick Start Guide](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html) for installation instructions. After downloading CUDA, import using ```pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126```
 
 2. **Install dependencies**:
    ```bash
