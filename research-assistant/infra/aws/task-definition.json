@@ -1,0 +1,39 @@
+{
+  "family": "research-assistant-weekly",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/research-assistant-task-role",
+  "containerDefinitions": [
+    {
+      "name": "research-assistant",
+      "image": "<ECR_URI>:latest",
+      "essential": true,
+      "command": ["python", "-m", "pipeline.run_all"],
+      "environment": [
+        {"name": "PYTHONPATH", "value": "/app/src"},
+        {"name": "DIGEST_QUERY", "value": "latest research"},
+        {"name": "DIGEST_LIMIT", "value": "5"},
+        {"name": "DIGEST_PER_PAPER_SENTENCES", "value": "3"},
+        {"name": "DIGEST_OVERALL_SENTENCES", "value": "6"},
+        {"name": "DIGEST_SUBJECT", "value": "Research Assistant Digest"},
+        {"name": "DIGEST_USE_LLM", "value": "false"},
+        {"name": "DRY_RUN", "value": "false"}
+      ],
+      "secrets": [
+        {"name": "SENDGRID_API_KEY", "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:SENDGRID_API_KEY-xxxxx"},
+        {"name": "PINECONE_API_KEY", "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:PINECONE_API_KEY-xxxxx"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/research-assistant",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+
+# Data
+data/
+
+# Local env files
+.env
+.env.*
+
+# OS/editor
+.DS_Store
+.vscode/

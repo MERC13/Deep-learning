@@ -53,6 +53,40 @@ cd src
 python -m pipeline.run_all
 ```
 
+## Containerize and run weekly on AWS (ECS Fargate)
+
+This repo includes a Dockerfile for running the weekly assistant as a container. High-level steps:
+
+1) Build and push the image
+
+```powershell
+# from repo root
+docker build -t research-assistant:local .
+# Optionally tag for ECR: <acct>.dkr.ecr.<region>.amazonaws.com/research-assistant:latest
+```
+
+2) Create an ECR repository and push the image (AWS Console or AWS CLI)
+
+3) Create an ECS task definition (Fargate)
+- CPU/memory: e.g., 1 vCPU / 2GB
+- Command: default from image (python -m pipeline.run_all)
+- Working dir: /app
+- Environment variables: see `.env.sample` for required/optional vars
+- Mount ephemeral storage for data: add an ephemeral volume mounted at `/data` (or leave as default 20GB)
+- Networking: public subnet with outgoing internet access (NAT/IGW) so it can fetch PDFs and call Pinecone/SendGrid
+- Secrets: store `SENDGRID_API_KEY` (and `PINECONE_API_KEY`) in AWS Secrets Manager and reference them in the task definition
+
+4) Schedule weekly runs
+- Use EventBridge (CloudWatch) schedule to trigger the ECS task (e.g., cron(0 13 ? * MON *))
+- Target: your ECS cluster and the task definition revision
+- Configure retry policy and dead-letter queue (optional)
+
+Notes
+- The image sets `PYTHONPATH=/app/src` and defaults `DIGEST_USE_LLM=false` to avoid needing an Ollama server. Enable LLM if you run an accessible Ollama endpoint.
+- Outputs are ephemeral unless you back them up; consider mounting an EFS volume to `/data` for persistence across runs.
+- Set `DRY_RUN=false` to actually send emails; with `true`, it logs only.
+
+
 ## Development
 
 Formatting, linting, and tests:

@@ -1,0 +1,24 @@
+{
+  "Name": "research-assistant-weekly",
+  "ScheduleExpression": "cron(0 13 ? * MON *)",
+  "State": "ENABLED",
+  "Targets": [
+    {
+      "Id": "EcsRunTask",
+      "Arn": "arn:aws:ecs:<REGION>:<ACCOUNT_ID>:cluster/<CLUSTER_NAME>",
+      "RoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsEventsRole",
+      "EcsParameters": {
+        "LaunchType": "FARGATE",
+        "PlatformVersion": "LATEST",
+        "NetworkConfiguration": {
+          "awsvpcConfiguration": {
+            "AssignPublicIp": "ENABLED",
+            "Subnets": ["subnet-xxxx"],
+            "SecurityGroups": ["sg-xxxx"]
+          }
+        },
+        "TaskDefinitionArn": "arn:aws:ecs:<REGION>:<ACCOUNT_ID>:task-definition/research-assistant-weekly:<REV>"
+      }
+    }
+  ]
+}

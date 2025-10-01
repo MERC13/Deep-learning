@@ -1,0 +1,57 @@
+{
+  "TaskExecutionRole": {
+    "AssumeRolePolicyDocument": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {"Service": "ecs-tasks.amazonaws.com"},
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    },
+    "ManagedPolicyArns": [
+      "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+    ]
+  },
+  "TaskRole": {
+    "AssumeRolePolicyDocument": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {"Service": "ecs-tasks.amazonaws.com"},
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    },
+    "Policies": [
+      {
+        "PolicyName": "ResearchAssistantInline",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "secretsmanager:GetSecretValue"
+              ],
+              "Resource": [
+                "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:SENDGRID_API_KEY-*",
+                "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:PINECONE_API_KEY-*"
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
