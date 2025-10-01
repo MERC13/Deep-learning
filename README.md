@@ -11,6 +11,7 @@ A collection of machine learning and deep learning experiments and mini-projects
 - research-assistant: Data ingestion/parsing utilities and artifacts (docs WIP).
 - stockproject: Stock prediction training pipeline plus a simple Flask app to serve predictions.
 - X-ray CNN: Transfer-learning with VGG16 for pneumonia detection from chest X-rays.
+- Atari RL: Deep Q-learning to train on Atari games, using ALE library.
 
 ## Setup
 
