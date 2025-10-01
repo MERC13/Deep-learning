@@ -41,14 +41,17 @@ def send_email(
     recipients = _parse_recipients(to if to is not None else TO_EMAILS_RAW)
     is_dry_run = DRY_RUN_DEFAULT if dry_run is None else dry_run
 
+    # In dry-run, don't require email configuration. Log intent and return.
+    if is_dry_run:
+        from_email = FROM_EMAIL or "<unset FROM_EMAIL>"
+        to_list = recipients or ["<unset TO_EMAILS>"]
+        log.info("[dry-run] Would send email from %s to %s with subject: %s", from_email, to_list, subject)
+        return None
+
     if not FROM_EMAIL:
         raise ValueError("FROM_EMAIL is not set in environment")
     if not recipients:
         raise ValueError("No recipients provided. Set TO_EMAILS or pass 'to'.")
-
-    if is_dry_run:
-        log.info("[dry-run] Would send email from %s to %s with subject: %s", FROM_EMAIL, recipients, subject)
-        return None
 
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
     if not SENDGRID_API_KEY:
