@@ -211,7 +211,39 @@ class DQNAgent:
         Args:
             filepath: Path to the saved model
         """
-        checkpoint = torch.load(filepath, map_location=self.device)
+        # PyTorch 2.6 defaults torch.load(weights_only=True), which blocks unpickling
+        # of custom classes like our DQNConfig saved in the checkpoint. We'll try a
+        # few strategies to remain compatible and safe:
+        # 1) Attempt safe allowlisting of DQNConfig if supported
+        # 2) Fall back to weights_only=False (only if you trust the checkpoint source)
+        checkpoint = None
+        load_errors = []
+        
+        # Attempt 1: safe allowlist + default load
+        try:
+            try:
+                # Only available in newer PyTorch versions
+                from torch.serialization import add_safe_globals  # type: ignore
+                # Import here to avoid circulars at module import time
+                from configs.config import DQNConfig as _DQNConfig  # type: ignore
+                add_safe_globals([_DQNConfig])
+            except Exception as _e:
+                # Safe globals may not exist or import may fail; record and proceed
+                load_errors.append(_e)
+            checkpoint = torch.load(filepath, map_location=self.device)
+        except Exception as e1:
+            load_errors.append(e1)
+            
+            # Attempt 2: explicitly disable weights_only for backward compatibility
+            try:
+                checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)  # type: ignore
+            except TypeError:
+                # Older PyTorch without weights_only parameter
+                checkpoint = torch.load(filepath, map_location=self.device)
+            except Exception as e2:
+                load_errors.append(e2)
+                # Re-raise the original error with context
+                raise e1
         
         self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
         self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
