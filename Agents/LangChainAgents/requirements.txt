@@ -1,0 +1,13 @@
+langgraph
+langchain-tavily
+langgraph-checkpoint-sqlite
+langchain-groq
+dotenv
+langchain-community
+langchainhub
+beautifulsoup4
+langchain-core
+langchain
+langchain-ollama
+IPython
+langgraph
