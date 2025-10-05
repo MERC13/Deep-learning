@@ -192,24 +192,34 @@ class DataLoaderLite:
     
 #-------------------------------------------------------------------------------------------
 
+import time
+
 torch.manual_seed(1337)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
 
-train_loader = DataLoaderLite(B=4, T=32)
+train_loader = DataLoaderLite(B=2, T=1024)
+torch.set_float32_matmul_precision('high')
 
 model = GPT(GPTConfig())
 model.to('cuda')
+model = torch.compile(model)
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 for i in range(50):
+    t0 = time.time()
     x, y = train_loader.next_batch()
     x, y = x.to('cuda'), y.to('cuda')
     optimizer.zero_grad()
-    logits, loss = model(x, y)
+    with torch.autocast(device_type='cuda', dtype=torch.float16):
+        logits, loss = model(x, y)
     loss.backward()
     optimizer.step()
-    print(f"step {i}, loss: {loss.item()}")
+    torch.cuda.synchronize()
+    t1 = time.time()
+    d1 = (t1 - t0) * 1000
+    tokens_per_sec = (train_loader.B * train_loader.T) / (t1 - t0)
+    print(f"step {i}, loss: {loss.item()}, dt: {d1:.2f}ms, tok/sec: {tokens_per_sec:.2f}")
 
 import sys; sys.exit()
 
