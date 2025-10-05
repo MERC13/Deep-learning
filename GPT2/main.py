@@ -81,7 +81,7 @@ class GPT(nn.Module):
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias = False)
 
-    def forward(self, idx):
+    def forward(self, idx, targets=None):
         B, T = idx.size()
         assert T <= self.config.block_size, f"Cannot foward sequence of length {T}..."
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device)
@@ -93,7 +93,10 @@ class GPT(nn.Module):
         
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)
-        return logits
+        loss = None
+        if targets is not None:
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+        return logits, loss
 
     @classmethod
     def from_pretrained(cls, model_type):
@@ -146,19 +149,23 @@ class GPT(nn.Module):
     
 #-------------------------------------------------------------------------------------------
 
-num_return_sequences = 5
-max_length = 30
-
-model = GPT.from_pretrained('gpt2')
-model.eval()
-model.to('cuda')
-
 import tiktoken
 enc = tiktoken.get_encoding("gpt2")
-tokens = enc.encode("Hello, I'm a language model,")
-tokens = torch.tensor(tokens, dtype=torch.long)
-tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
-x = tokens.to('cuda')
+with open('input.txt', 'r') as f:
+    text = f.read()
+text = text[:1000]
+tokens = enc.encode(text)
+B, T = 4, 32
+buf = torch.tensor(tokens[:B*T + 1])
+x = buf[:-1].view(B, T).to('cuda')
+y = buf[1:].view(B, T).to('cuda')
+
+model = GPT(GPTConfig())
+model.to('cuda')
+logits, loss = model(x, y)
+
+print(loss)
+import sys; sys.exit()
 
 torch.manual_seed(42)
 torch.cuda.manual_seed(42)
