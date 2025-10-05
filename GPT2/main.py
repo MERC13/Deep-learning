@@ -81,6 +81,20 @@ class GPT(nn.Module):
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias = False)
 
+    def forward(self, idx):
+        B, T = idx.size()
+        assert T <= self.config.block_size, f"Cannot foward sequence of length {T}..."
+        pos = torch.arange(0, T, dtype=torch.long, device=idx.device)
+        pos_emb = self.transformer.wpe(pos)
+        tok_emb = self.transformer.wte(idx)
+        x = tok_emb + pos_emb
+        for block in self.transformer.h:
+            x = block(x)
+        
+        x = self.transformer.ln_f(x)
+        logits = self.lm_head(x)
+        return logits
+
     @classmethod
     def from_pretrained(cls, model_type):
         """Loads pretrained GPT-2 model weights from huggingface"""
@@ -132,5 +146,9 @@ class GPT(nn.Module):
     
 #-------------------------------------------------------------------------------------------
 
+num_return_sequences = 5
+max_length = 30
+
 model = GPT.from_pretrained('gpt2')
-print("didn't crash")
+model.eval()
+model.to('cuda')
