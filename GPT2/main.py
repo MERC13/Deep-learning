@@ -1,3 +1,6 @@
+# Adopted from Andrej Karpathy's nanoGPT
+# Extra steps: DDP, switch dataset to FineWeb, validation loss, HellaSwag eval, permuted DataLoader, model saving, chatbot finetuning
+
 from dataclasses import dataclass
 import inspect
 import math
