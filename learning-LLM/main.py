@@ -1,85 +1,77 @@
-import transformers
-import peft
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
-from peft import LoraConfig, get_peft_model, TaskType
-from datasets import Dataset
+from flask import Flask, request, jsonify
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import sqlite3
+import threading
 
-model_name = "EleutherAI/gpt-j-6B"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-base_model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype="auto").cuda()
+app = Flask(__name__)
 
-for param in base_model.parameters():
-    param.requires_grad = False
+tokenizer = AutoTokenizer.from_pretrained("tiiuae/falcon-7b-instruct")
+model = AutoModelForCausalLM.from_pretrained("tiiuae/falcon-7b-instruct")
 
-lora_config = LoraConfig(
-    task_type=TaskType.CAUSAL_LM,
-    r=8,
-    lora_alpha=32,
-    target_modules=["q_proj", "v_proj"],
-    lora_dropout=0.1
+conn = sqlite3.connect("suggestions.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS suggestions (
+    category TEXT PRIMARY KEY,
+    text TEXT NOT NULL
 )
+""")
+conn.commit()
+db_lock = threading.Lock()
 
-model = get_peft_model(base_model, lora_config)
+# ----------------------------------------------------------------------------------
 
-trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+def add_suggestion(category: str, text: str):
+    """Store or update a user suggestion."""
+    with db_lock:
+        cursor.execute("""
+            INSERT INTO suggestions(category, text)
+            VALUES (?, ?)
+            ON CONFLICT(category) DO UPDATE SET text=excluded.text
+        """, (category, text))
+        conn.commit()
 
-# Prepare few-shot labeled examples
-data = Dataset.from_dict({
-    "text": ["Use more numbers", "What’s the weather?", ...],
-    "label": [1, 0, ...]
-})
-clf = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=2)
-args = TrainingArguments(output_dir="clf_out", per_device_train_batch_size=8, num_train_epochs=3)
-trainer = Trainer(model=clf, args=args, train_dataset=data)
-trainer.train()
+def get_all_suggestions() -> str:
+    """Retrieve and summarize all suggestions."""
+    with db_lock:
+        cursor.execute("SELECT text FROM suggestions")
+        entries = cursor.fetchall()
+    return "\n".join(entry[0] for entry in entries)
 
-clf.eval()
-clf = clf.cuda()
-
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-7)
-
-clf_tokenizer = ClfTokenizer.from_pretrained("distilbert-base-uncased")
-def is_feedback(msg: str) -> bool:
-    inputs = clf_tokenizer(msg, return_tensors="pt").to("cuda")
-    logits = clf(**inputs).logits
-    return logits.argmax(-1).item() == 1
-
-def online_update(user_msg: str, prompt: str, corrected: str=None):
-    # 1. Generate response
-    in_tok = tokenizer(prompt, return_tensors="pt").to("cuda")
-    gen = model.generate(**in_tok)
-
-    # 2. Detect feedback
-    feedback_flag = is_feedback(user_msg)
-    lr = 1e-5 if feedback_flag else 1e-7
-    for pg in optimizer.param_groups:
-        pg["lr"] = lr
-
-    # 3. Prepare training inputs
-    if feedback_flag and corrected:
-        inp = tokenizer(f"{prompt} [FEEDBACK] {user_msg}", return_tensors="pt").to("cuda")
-        lbl = tokenizer(corrected, return_tensors="pt").input_ids.to("cuda")
+def construct_prompt(user_input: str) -> str:
+    """Build the prompt with active preferences."""
+    prefs = get_all_suggestions()
+    if prefs:
+        return f"{prefs}\nUser: {user_input}\nChatbot:"
     else:
-        inp, lbl = in_tok.input_ids, gen
+        return f"User: {user_input}\nChatbot:"
 
-    # 4. Update adapters
-    model.train()
-    outputs = model(input_ids=inp, labels=lbl)
-    outputs.loss.backward()
-    optimizer.step()
-    optimizer.zero_grad()
+def generate_response(prompt: str) -> str:
+    """Generate chatbot reply using the pretrained model."""
+    inputs = tokenizer(prompt, return_tensors="pt")
+    outputs = model.generate(**inputs, max_length=512, pad_token_id=tokenizer.eos_token_id)
+    text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return text.split("Chatbot:")[-1].strip()
 
-    return tokenizer.decode(gen[0], skip_special_tokens=True)
+# ----------------------------------------------------------------------------------
 
+@app.route("/chat", methods=["POST"])
+def chat():
+    data = request.json
+    text = data.get("text", "").strip()
+    
+    if text.lower().startswith("suggestion:"):
+        # Format: "Suggestion: category=visualization; use charts"
+        print("---Parsing suggestion---")
+        _, body = text.split(":", 1)
+        category, instruction = body.split(";", 1)
+        add_suggestion(category.strip(), instruction.strip())
+        return jsonify({"reply": "👍 Preference noted and saved."})
+    
+    prompt = construct_prompt(text)
+    reply = generate_response(prompt)
+    print("RESPONSE:", reply)
+    return jsonify({"reply": reply})
 
-while True:
-    user_msg = input("User: ")
-    if user_msg.startswith("exit"):
-        break
-    # Optionally obtain a corrected target if feedback_flag is True
-    corrected = None
-    if is_feedback(user_msg):
-        corrected = input("Corrected target: ")
-    response = online_update(user_msg, user_msg, corrected)
-    print("LLM:", response)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)

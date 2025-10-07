@@ -1,7 +1,4 @@
+flask
 transformers
-peft
-datasets
-accelerate
 torch
-torchvision
-huggingface_hub
+hf_xet
