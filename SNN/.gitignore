@@ -1,2 +1,2 @@
-exoTest.csv
-exoTrain.csv
+# Ignore all CSV files
+*.csv
