@@ -1,0 +1,13 @@
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch
+torchvision
+pandas
+numpy==2.3.4
+nfl_data_py
+requests
+beautifulsoup4
+flask
+flask-cors
+
+rtdl
+optuna

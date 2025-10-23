@@ -1,0 +1,32 @@
+.ff-ai-prediction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  cursor: help;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: all 0.2s ease;
+  z-index: 1000;
+}
+
+.ff-ai-prediction:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.ff-points {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ff-label {
+  font-size: 10px;
+  opacity: 0.9;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
