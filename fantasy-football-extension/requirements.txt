@@ -2,7 +2,8 @@
 torch
 torchvision
 pandas
-numpy==2.3.4
+numpy
+scikit-learn
 nfl_data_py
 requests
 beautifulsoup4

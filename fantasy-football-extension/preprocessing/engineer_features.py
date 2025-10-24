@@ -1,4 +1,3 @@
-# preprocessing/engineer_features.py
 import pandas as pd
 import numpy as np
 
@@ -10,204 +9,114 @@ def engineer_features(data, position):
     # Sort by player and time
     data = data.sort_values(['player_id', 'season', 'week'])
     
-    # ============ PLAYER PERFORMANCE FEATURES ============
-    
-    # Rolling averages (recent performance)
-    rolling_windows = [2, 3, 5]
-    stats_to_roll = ['fantasy_points', 'yards', 'touchdowns', 'targets', 'carries']
-    
-    for window in rolling_windows:
-        for stat in stats_to_roll:
-            if stat in data.columns:
-                data[f'{stat}_rolling_{window}'] = (
-                    data.groupby('player_id')[stat]
-                    .rolling(window, min_periods=1)
-                    .mean()
-                    .reset_index(0, drop=True)
-                )
-    
-    # Season-to-date averages
-    data['fantasy_ppg_ytd'] = (
-        data.groupby(['player_id', 'season'])['fantasy_points']
-        .expanding().mean()
-        .reset_index(0, drop=True)
-    )
-    
-    # Momentum (trend over last 3 games)
-    data['fantasy_trend'] = (
-        data['fantasy_points_rolling_3'] - 
-        data.groupby('player_id')['fantasy_points_rolling_3'].shift(3)
-    )
-    
-    # ============ OPPONENT FEATURES ============
+    # ============ RECENT PERFORMANCE TREND ============
+    # Rolling average of fantasy points (3-game trend)
+    if 'fantasy_points_ppr' in data.columns:
+        data['fantasy_trend'] = (
+            data.groupby('player_id')['fantasy_points_ppr']
+            .rolling(3, min_periods=1)
+            .mean()
+            .reset_index(0, drop=True)
+        )
     
     # Opponent defensive strength (points allowed to position)
-    data['opp_def_rank_vs_pos'] = (
-        data.groupby(['opponent', 'position', 'season'])['fantasy_points']
-        .transform(lambda x: x.rank(pct=True))
-    )
+    if {'opponent_team', 'position', 'season', 'fantasy_points_ppr'}.issubset(data.columns):
+        data['opp_def_rank_vs_pos'] = (
+            data.groupby(['opponent_team', 'position', 'season'])['fantasy_points_ppr']
+            .transform(lambda x: x.rank(pct=True))
+        )
+    else:
+        data['opp_def_rank_vs_pos'] = np.nan
     
-    # Opponent injuries (key defensive players out)
-    # This would come from injury reports
-    data['opp_def_injuries'] = 0  # Placeholder - requires injury data
-    
-    # ============ HOME/AWAY & ENVIRONMENTAL ============
-    
+    # ============ HOME/AWAY & ENVIRONMENTAL FEATURES ============
     # Home field advantage
-    data['is_home'] = (data['team'] == data['home_team']).astype(int)
-    
-    # Division game (more familiarity, different dynamics)
-    data['is_division_game'] = (
-        data['team_division'] == data['opponent_division']
-    ).astype(int)
-    
-    # Weather impact (for outdoor games)
-    if 'temperature' in data.columns:
-        data['is_cold'] = (data['temperature'] < 40).astype(int)
-        data['is_hot'] = (data['temperature'] > 85).astype(int)
-        data['has_precipitation'] = (
-            (data['weather'].str.contains('rain|snow', case=False, na=False))
-            .astype(int)
-        )
-    
-    # Stadium type (dome vs outdoor)
-    data['is_dome'] = data['roof'].isin(['dome', 'closed']).astype(int)
-    
+    if {'recent_team', 'home_team'}.issubset(data.columns):
+        data['is_home'] = (data['recent_team'] == data['home_team']).astype(int)
+
+    # Division game flag if division columns available (not specified in merge)
+    if {'team_division', 'opponent_division'}.issubset(data.columns):
+        data['is_division_game'] = (data['team_division'] == data['opponent_division']).astype(int)
+
+    # Weather-based features if provided
+    if 'temp' in data.columns:
+        data['is_cold'] = (data['temp'] < 40).astype(int)
+        data['is_hot'] = (data['temp'] > 85).astype(int)
+
+    if 'roof' in data.columns:
+        data['is_dome'] = data['roof'].isin(['dome', 'closed']).astype(int)
+
     # ============ GAME CONTEXT ============
-    
-    # Vegas betting lines (game script predictor)
-    data['is_favored'] = (data['spread'] < 0).astype(int)
-    data['spread_magnitude'] = abs(data['spread'])
-    data['game_total'] = data['over_under']  # Expected total points
-    
-    # Implied team total
-    data['implied_team_total'] = (
-        data['game_total'] / 2 - data['spread'] / 2
-    )
-    
-    # ============ INJURY & GAME NUMBER ============
-    
-    # Injury status (from injury reports)
-    injury_map = {'': 0, 'Questionable': 1, 'Doubtful': 2, 'Out': 3}
-    if 'injury_status' in data.columns:
-        data['injury_severity'] = data['injury_status'].map(injury_map).fillna(0)
-    
+    # Vegas lines and derived features
+    if {'spread_line', 'total_line'}.issubset(data.columns):
+        data['is_favored'] = (data['spread_line'] < 0).astype(int)
+        data['spread_magnitude'] = abs(data['spread_line'])
+        data['game_total'] = data['total_line']
+        data['implied_team_total'] = (data['game_total'] / 2) - (data['spread_line'] / 2)
+    else:
+        for col in ['is_favored', 'spread_magnitude', 'game_total', 'implied_team_total']:
+            data[col] = np.nan
+
+    # ============ INJURY & GAMELOAD ============
+    # Injury severity mapping
+    injury_map = {'': 0, 'Healthy': 0, 'Questionable': 1, 'Doubtful': 2, 'Out': 3}
+    if 'report_status' in data.columns:
+        data['injury_severity'] = data['report_status'].map(injury_map).fillna(0)
+    else:
+        data['injury_severity'] = 0
+
     # Games played this season (fatigue factor)
-    data['games_played'] = (
-        data.groupby(['player_id', 'season']).cumcount() + 1
-    )
-    
-    # Week of season (late season performance changes)
-    data['week_of_season'] = data['week']
-    data['is_early_season'] = (data['week'] <= 4).astype(int)
-    data['is_late_season'] = (data['week'] >= 14).astype(int)
-    
-    # Days of rest since last game
-    data['gameday'] = pd.to_datetime(data['gameday'])
-    data['days_rest'] = (
-        data.groupby('player_id')['gameday']
-        .diff()
-        .dt.days
-        .fillna(7)
-    )
-    
+    data['games_played'] = data.groupby(['player_id', 'season']).cumcount() + 1
+
+    # Early and late season flags
+    if 'week' in data.columns:
+        data['is_early_season'] = (data['week'] <= 4).astype(int)
+        data['is_late_season'] = (data['week'] >= 14).astype(int)
+        data['week_of_season'] = data['week']
+
+    # Days of rest between games
+    if 'gameday' in data.columns:
+        data['gameday'] = pd.to_datetime(data['gameday'])
+        data['days_rest'] = data.groupby('player_id')['gameday'].diff().dt.days.fillna(7)
+    else:
+        data['days_rest'] = 7  # Default rest value
+
     # ============ USAGE & OPPORTUNITY ============
-    
-    # Snap percentage (playing time)
-    data['snap_pct'] = data['snaps'] / data['team_snaps']
-    data['snap_pct_rolling_3'] = (
-        data.groupby('player_id')['snap_pct']
-        .rolling(3, min_periods=1)
-        .mean()
-        .reset_index(0, drop=True)
-    )
-    
-    # Target/touch share (opportunity)
+    # Snap percentage and its rolling average
+    if {'offense_snaps', 'offense_pct'}.issubset(data.columns):
+        data['snap_pct'] = data['offense_pct']
+        data['snap_pct_rolling_3'] = (
+            data.groupby('player_id')['snap_pct'].rolling(3, min_periods=1).mean().reset_index(0, drop=True)
+        )
+
+    # Target/touch share (calculated if targets and team totals available)
     if position in ['WR', 'TE']:
-        data['target_share'] = (
-            data['targets'] / data.groupby(['team', 'week'])['targets'].transform('sum')
-        )
-    
-    if position == 'RB':
-        data['carry_share'] = (
-            data['carries'] / data.groupby(['team', 'week'])['carries'].transform('sum')
-        )
-    
+        if {'targets', 'team', 'week'}.issubset(data.columns):
+            data['target_share'] = data['targets'] / data.groupby(['team', 'week'])['targets'].transform('sum')
+    elif position == 'RB':
+        if {'carries', 'team', 'week'}.issubset(data.columns):
+            data['carry_share'] = data['carries'] / data.groupby(['team', 'week'])['carries'].transform('sum')
+
     # ============ NEXT GEN STATS FEATURES ============
-    
-    if position in ['WR', 'TE']:
-        # Average separation from defender (NGS)
-        data['avg_separation_rolling_3'] = (
-            data.groupby('player_id')['avg_separation']
-            .rolling(3, min_periods=1)
-            .mean()
-            .reset_index(0, drop=True)
-        )
-        
-        # Cushion given by defense
-        data['avg_cushion_rolling_3'] = (
-            data.groupby('player_id')['avg_cushion']
-            .rolling(3, min_periods=1)
-            .mean()
-            .reset_index(0, drop=True)
-        )
-    
-    if position == 'RB':
-        # Rushing efficiency (yards over expected)
-        data['efficiency_rolling_3'] = (
-            data.groupby('player_id')['efficiency']
-            .rolling(3, min_periods=1)
-            .mean()
-            .reset_index(0, drop=True)
-        )
-        
-        # Percentage of rushes against stacked boxes
-        data['eight_defenders_pct_rolling_3'] = (
-            data.groupby('player_id')['percent_attempts_gte_8_defenders']
-            .rolling(3, min_periods=1)
-            .mean()
-            .reset_index(0, drop=True)
-        )
-    
+    # Use raw NGS metrics directly, avoid rolling averages as already computed in preprocessing
+
+    # ============ POSITION-SPECIFIC ADDITIONS ============
     if position == 'QB':
-        # Time to throw (NGS)
-        data['avg_time_to_throw_rolling_3'] = (
-            data.groupby('player_id')['avg_time_to_throw']
-            .rolling(3, min_periods=1)
-            .mean()
-            .reset_index(0, drop=True)
-        )
-        
-        # Completed air yards
-        data['avg_completed_air_yards_rolling_3'] = (
-            data.groupby('player_id')['avg_completed_air_yards']
-            .rolling(3, min_periods=1)
-            .mean()
-            .reset_index(0, drop=True)
-        )
-    
-    # ============ POSITION-SPECIFIC FEATURES ============
-    
-    if position == 'QB':
-        # Pressure rate
-        if 'times_pressured' in data.columns:
+        # Pressure rate and deep ball rate (if available)
+        if {'times_pressured', 'dropbacks'}.issubset(data.columns):
             data['pressure_rate'] = data['times_pressured'] / data['dropbacks']
-        
-        # Deep ball rate
-        if 'deep_attempts' in data.columns:
+        if {'deep_attempts', 'attempts'}.issubset(data.columns):
             data['deep_rate'] = data['deep_attempts'] / data['attempts']
-    
-    if position in ['RB']:
-        # Red zone usage
-        data['redzone_touches_rolling_3'] = (
-            data.groupby('player_id')['redzone_touches']
-            .rolling(3, min_periods=1)
-            .mean()
-            .reset_index(0, drop=True)
-        )
-    
+
+    if position == 'RB':
+        if 'redzone_touches' in data.columns:
+            data['redzone_touches_rolling_3'] = (
+                data.groupby('player_id')['redzone_touches']
+                .rolling(3, min_periods=1)
+                .mean()
+                .reset_index(0, drop=True)
+            )
+
     if position in ['WR', 'TE']:
-        # Air yards share
         if 'air_yards_share' in data.columns:
             data['air_yards_share_rolling_3'] = (
                 data.groupby('player_id')['air_yards_share']
@@ -215,10 +124,10 @@ def engineer_features(data, position):
                 .mean()
                 .reset_index(0, drop=True)
             )
-    
+
     print(f"Feature engineering complete for {position}")
     print(f"Total features: {len(data.columns)}")
-    
+
     return data
 
 if __name__ == '__main__':
