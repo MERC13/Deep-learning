@@ -1,14 +1,28 @@
-// background.js
-const API_URL = 'https://your-api.herokuapp.com';  // Or your deployed API
+// background.js (Edge-compatible)
+// Cross-browser extension API alias (Edge uses chrome.*; Firefox uses browser.*)
+const ext = typeof chrome !== 'undefined' ? chrome : (typeof browser !== 'undefined' ? browser : null);
+// API base URL: default to local during development; can be overridden via storage 'apiUrl'
+let API_URL = 'http://localhost:5000';
 
-// Fetch predictions on install
-chrome.runtime.onInstalled.addListener(async () => {
-  await fetchAndCachePredictions();
+// Load saved API_URL override if present
+ext.storage?.local.get(['apiUrl'], (result) => {
+  if (result.apiUrl) {
+    API_URL = result.apiUrl;
+    console.log('Using custom API URL:', API_URL);
+  }
+});
+
+// Fetch predictions on install and on browser startup
+ext.runtime?.onInstalled.addListener(async () => {
+  await ensurePredictionsFresh();
+});
+ext.runtime?.onStartup?.addListener(async () => {
+  await ensurePredictionsFresh();
 });
 
 // Update predictions daily
-chrome.alarms.create('updatePredictions', { periodInMinutes: 1440 });
-chrome.alarms.onAlarm.addListener((alarm) => {
+ext.alarms?.create('updatePredictions', { periodInMinutes: 1440 });
+ext.alarms?.onAlarm.addListener((alarm) => {
   if (alarm.name === 'updatePredictions') {
     fetchAndCachePredictions();
   }
@@ -17,16 +31,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 async function fetchAndCachePredictions() {
   try {
     const currentWeek = getCurrentNFLWeek();
-    const response = await fetch(
-      `${API_URL}/predictions/weekly?week=${currentWeek}&season=2025`
-    );
+    const response = await fetch(`${API_URL}/predictions/weekly?week=${currentWeek}&season=2025`);
     
     if (!response.ok) throw new Error('API request failed');
     
-    const predictions = await response.json();
+  const predictions = await response.json();
     
     // Store in Chrome storage
-    await chrome.storage.local.set({
+    await ext.storage?.local.set({
       predictions: predictions,
       lastUpdated: Date.now(),
       week: currentWeek
@@ -35,6 +47,19 @@ async function fetchAndCachePredictions() {
     console.log('Predictions updated:', Object.keys(predictions).length, 'players');
   } catch (error) {
     console.error('Failed to fetch predictions:', error);
+  }
+}
+
+async function ensurePredictionsFresh(maxAgeMinutes = 360) { // default 6 hours
+  try {
+    const { lastUpdated } = await ext.storage?.local.get(['lastUpdated']);
+    const stale = !lastUpdated || (Date.now() - lastUpdated) > maxAgeMinutes * 60 * 1000;
+    if (stale) {
+      await fetchAndCachePredictions();
+    }
+  } catch (e) {
+    console.warn('Failed to check freshness, fetching anyway');
+    await fetchAndCachePredictions();
   }
 }
 
@@ -48,12 +73,20 @@ function getCurrentNFLWeek() {
 }
 
 // Handle messages from content script
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+ext.runtime?.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getPrediction') {
-    chrome.storage.local.get(['predictions'], (result) => {
+    ext.storage?.local.get(['predictions'], (result) => {
       const prediction = result.predictions?.[request.playerName];
       sendResponse({ prediction });
     });
     return true;  // Async response
+  }
+  if (request.action === 'ensurePredictions') {
+    ensurePredictionsFresh().then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (request.action === 'refreshPredictions') {
+    fetchAndCachePredictions().then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
   }
 });

@@ -5,6 +5,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 import numpy as np
+import os
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import TimeSeriesSplit
 import optuna
@@ -380,17 +381,40 @@ if __name__ == '__main__':
             
             # Optional: Hyperparameter optimization (uncomment to enable)
             # best_params = hyperparameter_optimization(data_dict, position, n_trials=20)
-            # Use optimized params or defaults
-            best_params = {
-                'd_token': 192,
-                'n_layers': 3,
-                'n_heads': 8,
-                'dropout': 0.15,
-                'lr': 1e-4,
-                'batch_size': 128
-            }
-            
-            # Create model
+
+            # Resume-from-checkpoint logic
+            complete_ckpt_path = f"models/{position}_transformer_complete.pt"
+            best_only_path = f"models/best_model_{position}.pt"
+
+            loaded_from_checkpoint = False
+            checkpoint = None
+
+            if os.path.exists(complete_ckpt_path):
+                print(f"Found existing checkpoint: {complete_ckpt_path}. Resuming training from it.")
+                checkpoint = torch.load(complete_ckpt_path, map_location=device)
+                # Use saved hyperparameters when available
+                saved_hparams = checkpoint.get('hyperparameters', {})
+                best_params = {
+                    'd_token': saved_hparams.get('d_token', 192),
+                    'n_layers': saved_hparams.get('n_layers', 3),
+                    'n_heads': saved_hparams.get('n_heads', 8),
+                    'dropout': saved_hparams.get('dropout', 0.15),
+                    'lr': saved_hparams.get('lr', 1e-4),
+                    'batch_size': saved_hparams.get('batch_size', 128),
+                }
+                loaded_from_checkpoint = True
+            else:
+                # Fallback defaults if no complete checkpoint
+                best_params = {
+                    'd_token': 192,
+                    'n_layers': 3,
+                    'n_heads': 8,
+                    'dropout': 0.15,
+                    'lr': 1e-4,
+                    'batch_size': 128
+                }
+
+            # Create model (new or from checkpoint)
             model = FTTransformer(
                 num_continuous=data_dict['num_continuous'],
                 cat_cardinalities=data_dict['cat_cardinalities'],
@@ -399,6 +423,25 @@ if __name__ == '__main__':
                 n_heads=best_params['n_heads'],
                 dropout=best_params['dropout']
             )
+
+            if loaded_from_checkpoint and checkpoint is not None:
+                try:
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    print("Loaded model weights from complete checkpoint.")
+                except Exception as e:
+                    print(f"Warning: Failed to load complete checkpoint weights ({e}).")
+                    if os.path.exists(best_only_path):
+                        try:
+                            model.load_state_dict(torch.load(best_only_path, map_location=device))
+                            print("Loaded weights from best-only checkpoint as fallback.")
+                        except Exception as e2:
+                            print(f"Warning: Failed to load best-only checkpoint as well ({e2}). Starting from scratch.")
+            elif os.path.exists(best_only_path):
+                try:
+                    model.load_state_dict(torch.load(best_only_path, map_location=device))
+                    print(f"Found best model weights at {best_only_path}. Resuming training from them.")
+                except Exception as e:
+                    print(f"Warning: Failed to load best-only checkpoint ({e}). Starting from scratch.")
             
             print(f"\nModel Parameters:")
             print(f"  Total parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -419,7 +462,8 @@ if __name__ == '__main__':
             )
             
             # Load best model
-            model.load_state_dict(torch.load(f'models/best_model_{position}.pt', map_location=device))
+            if os.path.exists(f'models/best_model_{position}.pt'):
+                model.load_state_dict(torch.load(f'models/best_model_{position}.pt', map_location=device))
             
             # Evaluate
             eval_results = evaluate_model(model, test_loader, device=device)

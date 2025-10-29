@@ -1,16 +1,31 @@
-// content.js
+// content.js (Edge-compatible)
+// Cross-browser API alias
+const ext = typeof chrome !== 'undefined' ? chrome : (typeof browser !== 'undefined' ? browser : null);
 let predictions = {};
+let matchStats = { attempted: 0, injected: 0 };
 
-// Load predictions from storage
-chrome.storage.local.get(['predictions'], (result) => {
-  predictions = result.predictions || {};
-  console.log('Loaded', Object.keys(predictions).length, 'predictions');
-  
-  // Inject predictions
-  injectPredictions();
-  
-  // Observer for dynamic content
-  observePageChanges();
+// Ask background to ensure predictions are fresh (wakes MV3 service worker)
+ext.runtime?.sendMessage({ action: 'ensurePredictions' }, () => {
+  // Regardless of result, load from storage
+  ext.storage?.local.get(['predictions', 'week', 'lastUpdated'], (result) => {
+    predictions = result.predictions || {};
+    console.log('Loaded', Object.keys(predictions).length, 'predictions');
+
+    // Inject predictions
+    injectPredictions();
+
+    // Observer for dynamic content
+    observePageChanges();
+
+    // Create overlay with status/debug info
+    createOrUpdateOverlay({
+      loaded: Object.keys(predictions).length,
+      attempted: matchStats.attempted,
+      injected: matchStats.injected,
+      week: result.week,
+      lastUpdated: result.lastUpdated
+    });
+  });
 });
 
 function injectPredictions() {
@@ -26,12 +41,26 @@ function injectPredictions() {
       const playerName = extractPlayerName(element);
       if (!playerName) return;
       
+      matchStats.attempted++;
       const prediction = findPrediction(playerName);
       if (prediction) {
         injectPredictionBadge(element, prediction);
         element.dataset.predictionInjected = 'true';
+        matchStats.injected++;
+      } else {
+        // Debug unmatched names in console (throttle by sampling)
+        if (Math.random() < 0.05) {
+          console.debug('[FF-AI] No prediction match for:', playerName);
+        }
       }
     });
+  });
+
+  // Update overlay after a pass
+  createOrUpdateOverlay({
+    loaded: Object.keys(predictions).length,
+    attempted: matchStats.attempted,
+    injected: matchStats.injected
   });
 }
 
@@ -42,7 +71,9 @@ function detectPlatform() {
     return [
       'a[data-ys-playerid]',
       '.ysf-player-name a',
-      'td.player a'
+      'td.player a',
+      'td.Nowrap a',
+      'div.js-player-name a'
     ];
   } else if (hostname.includes('espn')) {
     return [
@@ -66,6 +97,10 @@ function extractPlayerName(element) {
   // Remove position tags, team abbreviations
   name = name.replace(/\b(QB|RB|WR|TE|K|DEF)\b/gi, '').trim();
   name = name.replace(/\([A-Z]{2,3}\)/g, '').trim();
+  // Remove injury/status markers
+  name = name.replace(/\b(Q|O|D|DTD|IR|PUP|OUT|DNP|NA|P)\b/gi, '').trim();
+  // Remove ranks or roster positions like RB1, WR2
+  name = name.replace(/\b(RB|WR|TE|QB)\d+\b/gi, '').trim();
   name = name.replace(/\s+/g, ' ');
   
   return name;
@@ -125,4 +160,24 @@ function observePageChanges() {
     childList: true,
     subtree: true
   });
+}
+
+function createOrUpdateOverlay({ loaded, attempted, injected, week, lastUpdated } = {}) {
+  let overlay = document.querySelector('.ff-ai-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'ff-ai-overlay';
+    document.body.appendChild(overlay);
+  }
+  const parts = [];
+  if (typeof loaded === 'number') parts.push(`Loaded: ${loaded}`);
+  if (typeof injected === 'number' && typeof attempted === 'number') parts.push(`Injected: ${injected}/${attempted}`);
+  if (typeof week !== 'undefined') parts.push(`Week: ${week}`);
+  if (lastUpdated) {
+    try {
+      const dt = new Date(lastUpdated);
+      parts.push(`Updated: ${dt.toLocaleTimeString()}`);
+    } catch {}
+  }
+  overlay.textContent = `FF-AI ${parts.join(' | ')}`;
 }
