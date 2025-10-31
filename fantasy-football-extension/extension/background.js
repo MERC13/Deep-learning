@@ -1,16 +1,5 @@
-// background.js (Edge-compatible)
-// Cross-browser extension API alias (Edge uses chrome.*; Firefox uses browser.*)
 const ext = typeof chrome !== 'undefined' ? chrome : (typeof browser !== 'undefined' ? browser : null);
-// API base URL: default to local during development; can be overridden via storage 'apiUrl'
 let API_URL = 'http://localhost:5000';
-
-// Load saved API_URL override if present
-ext.storage?.local.get(['apiUrl'], (result) => {
-  if (result.apiUrl) {
-    API_URL = result.apiUrl;
-    console.log('Using custom API URL:', API_URL);
-  }
-});
 
 // Fetch predictions on install and on browser startup
 ext.runtime?.onInstalled.addListener(async () => {

@@ -1,4 +1,3 @@
-// content.js (Edge-compatible)
 // Cross-browser API alias
 const ext = typeof chrome !== 'undefined' ? chrome : (typeof browser !== 'undefined' ? browser : null);
 let predictions = {};
@@ -29,17 +28,30 @@ ext.runtime?.sendMessage({ action: 'ensurePredictions' }, () => {
 });
 
 function injectPredictions() {
-  // Platform-specific selectors
   const platformSelectors = detectPlatform();
-  
+
   platformSelectors.forEach(selector => {
-    const playerElements = document.querySelectorAll(selector);
-    
+    // Convert NodeList to array for filtering and slicing
+    let playerElements = Array.from(document.querySelectorAll(selector));
+
+    // Limit elements processed at once (adjust as needed)
+    playerElements = playerElements.slice(0, 500);
+
     playerElements.forEach(element => {
-      if (element.dataset.predictionInjected) return;
-      
+      // Skip elements already injected or processed (including failed matches)
+      if (element.dataset.predictionInjected || element.dataset.ffAiProcessed) return;
+
+      // Skip invisible or detached elements
+      if (!element.isConnected || element.offsetParent === null) {
+        element.dataset.ffAiProcessed = 'true'; // mark processed to skip later
+        return;
+      }
+
       const playerName = extractPlayerName(element);
-      if (!playerName) return;
+      if (!playerName) {
+        element.dataset.ffAiProcessed = 'true';
+        return;
+      }
       
       matchStats.attempted++;
       const prediction = findPrediction(playerName);
@@ -48,21 +60,22 @@ function injectPredictions() {
         element.dataset.predictionInjected = 'true';
         matchStats.injected++;
       } else {
-        // Debug unmatched names in console (throttle by sampling)
-        if (Math.random() < 0.05) {
+        // Mark as processed to avoid repeated attempts on no-match
+        element.dataset.ffAiProcessed = 'true';
+        if (Math.random() < 0.01) {
           console.debug('[FF-AI] No prediction match for:', playerName);
         }
       }
     });
   });
 
-  // Update overlay after a pass
   createOrUpdateOverlay({
     loaded: Object.keys(predictions).length,
     attempted: matchStats.attempted,
     injected: matchStats.injected
   });
 }
+
 
 function detectPlatform() {
   const hostname = window.location.hostname;
@@ -147,20 +160,21 @@ function injectPredictionBadge(element, prediction) {
 }
 
 function observePageChanges() {
-  // Observe DOM mutations for SPAs
-  const observer = new MutationObserver((mutations) => {
-    // Debounce to avoid performance issues
+  let lastMutationCount = 0;
+  
+  const observer = new MutationObserver(mutations => {
+    // Only trigger if number of mutations exceeds threshold to avoid trivial changes
+    if (mutations.length < 5) return;
+
     clearTimeout(window.predictionTimeout);
     window.predictionTimeout = setTimeout(() => {
       injectPredictions();
-    }, 500);
+    }, 1500); // Increased debounce to 1.5 seconds
   });
-  
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
 }
+
 
 function createOrUpdateOverlay({ loaded, attempted, injected, week, lastUpdated } = {}) {
   let overlay = document.querySelector('.ff-ai-overlay');

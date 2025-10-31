@@ -1,4 +1,3 @@
-# models/temporal_transformer.py
 import torch
 import torch.nn as nn
 from typing import List, Optional
@@ -103,6 +102,7 @@ class TemporalTransformer(nn.Module):
                 norm_first=True,
             ),
             num_layers=n_layers,
+            enable_nested_tensor=False,
         )
         self.dropout = nn.Dropout(dropout)
         self.head = nn.Sequential(

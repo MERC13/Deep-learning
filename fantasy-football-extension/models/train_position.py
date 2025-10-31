@@ -1,4 +1,17 @@
-# models/train_position.py
+""" 
+QB:
+  MAE: 6.20, RMSE: 7.85, R²: 0.282
+
+RB:
+  MAE: 4.16, RMSE: 5.80, R²: 0.434
+
+WR:
+  MAE: 4.42, RMSE: 6.24, R²: 0.364
+
+TE:
+  MAE: 3.82, RMSE: 5.18, R²: 0.280
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,6 +24,30 @@ from sklearn.model_selection import TimeSeriesSplit
 import optuna
 from ft_transformer import FTTransformer
 from temporal_transformer import TemporalTransformer
+
+# Allowlist sklearn classes for torch.load safe unpickler (PyTorch 2.6+ default weights_only=True)
+try:
+    import torch.serialization as _ts
+    _ts.add_safe_globals([StandardScaler, LabelEncoder])
+except Exception:
+    # If running on older PyTorch without safe unpickler, or any failure, continue gracefully
+    pass
+
+
+def _torch_load_compat(path, map_location=None, weights_only=None):
+    """Compatibility wrapper for torch.load handling weights_only across versions.
+
+    - If weights_only is provided, try to pass it; if unsupported, fall back to default signature.
+    - Use map_location when provided.
+    """
+    try:
+        if weights_only is None:
+            return torch.load(path, map_location=map_location)
+        else:
+            return torch.load(path, map_location=map_location, weights_only=weights_only)
+    except TypeError:
+        # Older torch without weights_only argument
+        return torch.load(path, map_location=map_location)
 
 
 class FantasyDataset(Dataset):
@@ -252,7 +289,7 @@ def train_model(model, train_loader, val_loader, position='model', epochs=50, lr
     
     # Learning rate scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=5
+        optimizer, mode='min', factor=0.5, patience=10
     )
     
     best_val_loss = float('inf')
@@ -488,7 +525,8 @@ if __name__ == '__main__':
 
             if os.path.exists(complete_ckpt_path):
                 print(f"Found existing checkpoint: {complete_ckpt_path}. Resuming training from it.")
-                checkpoint = torch.load(complete_ckpt_path, map_location=device)
+                # Explicitly allow full pickle load since checkpoint contains sklearn objects
+                checkpoint = _torch_load_compat(complete_ckpt_path, map_location=device, weights_only=False)
                 # Use saved hyperparameters when available
                 saved_hparams = checkpoint.get('hyperparameters', {})
                 best_params = {
@@ -531,13 +569,13 @@ if __name__ == '__main__':
                     print(f"Warning: Failed to load complete checkpoint weights ({e}).")
                     if os.path.exists(best_only_path):
                         try:
-                            model.load_state_dict(torch.load(best_only_path, map_location=device))
+                            model.load_state_dict(_torch_load_compat(best_only_path, map_location=device, weights_only=True))
                             print("Loaded weights from best-only checkpoint as fallback.")
                         except Exception as e2:
                             print(f"Warning: Failed to load best-only checkpoint as well ({e2}). Starting from scratch.")
             elif os.path.exists(best_only_path):
                 try:
-                    model.load_state_dict(torch.load(best_only_path, map_location=device))
+                    model.load_state_dict(_torch_load_compat(best_only_path, map_location=device, weights_only=True))
                     print(f"Found best model weights at {best_only_path}. Resuming training from them.")
                 except Exception as e:
                     print(f"Warning: Failed to load best-only checkpoint ({e}). Starting from scratch.")
@@ -558,14 +596,15 @@ if __name__ == '__main__':
             test_loader = DataLoader(test_dataset, batch_size=best_params['batch_size'], collate_fn=collate)
             
             # Train
+            epochs_to_train = 50
             model, train_losses, val_losses = train_model(
                 model, train_loader, val_loader,
-                position=position, epochs=50, lr=best_params['lr'], device=device, is_sequence=True
+                position=position, epochs=epochs_to_train, lr=best_params['lr'], device=device, is_sequence=True
             )
             
             # Load best model
             if os.path.exists(f'models/best_model_{position}.pt'):
-                model.load_state_dict(torch.load(f'models/best_model_{position}.pt', map_location=device))
+                model.load_state_dict(_torch_load_compat(f'models/best_model_{position}.pt', map_location=device, weights_only=True))
             
             # Evaluate
             eval_results = evaluate_model(model, test_loader, device=device, is_sequence=True)
