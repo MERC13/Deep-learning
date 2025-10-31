@@ -10,20 +10,81 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import TimeSeriesSplit
 import optuna
 from ft_transformer import FTTransformer
+from temporal_transformer import TemporalTransformer
 
 
 class FantasyDataset(Dataset):
-    """PyTorch Dataset for fantasy football data"""
+    """PyTorch Dataset for flat (non-sequence) fantasy football data"""
     def __init__(self, X_num, X_cat, y):
         self.X_num = torch.FloatTensor(X_num)
         self.X_cat = torch.LongTensor(X_cat)
         self.y = torch.FloatTensor(y)
-    
+
     def __len__(self):
         return len(self.y)
-    
+
     def __getitem__(self, idx):
         return self.X_num[idx], self.X_cat[idx], self.y[idx]
+
+
+class SequenceFantasyDataset(Dataset):
+    """Dataset returning variable-length sequences of prior weeks per player-week.
+
+    Each item:
+        X_num_seq: (T, Cn) float tensor of prior weeks' numeric features
+        X_cat_seq: (T, Cc) long tensor of prior weeks' categorical features
+        y:         (1,) float tensor fantasy points for week n
+    """
+    def __init__(self, seq_X_num: list, seq_X_cat: list, y: np.ndarray):
+        assert len(seq_X_num) == len(seq_X_cat) == len(y)
+        self.seq_X_num = seq_X_num
+        self.seq_X_cat = seq_X_cat
+        self.y = torch.FloatTensor(y)
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+        xnum = torch.tensor(self.seq_X_num[idx], dtype=torch.float32)
+        xcat = torch.tensor(self.seq_X_cat[idx], dtype=torch.long)
+        return xnum, xcat, self.y[idx]
+
+
+def sequence_collate_fn(batch, pad_cat_indices: np.ndarray):
+    """Pad variable-length sequences in a batch.
+
+    Args:
+        batch: list of (xnum, xcat, y). xnum=(T,Cn), xcat=(T,Cc)
+        pad_cat_indices: array of length num_categorical giving padding index per categorical feature
+    Returns:
+        xnum_pad: (B, T_max, Cn)
+        xcat_pad: (B, T_max, Cc)
+        y: (B,1)
+        key_padding_mask: (B, T_max) bool (True for pads)
+    """
+    xs_num, xs_cat, ys = zip(*batch)
+    B = len(batch)
+    T_max = max(x.shape[0] for x in xs_num)
+    Cn = xs_num[0].shape[1]
+    Cc = xs_cat[0].shape[1] if xs_cat[0].ndim == 2 else 0
+
+    xnum_pad = torch.zeros((B, T_max, Cn), dtype=torch.float32)
+    xcat_pad = torch.zeros((B, T_max, Cc), dtype=torch.long)
+    key_padding_mask = torch.ones((B, T_max), dtype=torch.bool)  # start as all pad
+
+    for i, (xn, xc) in enumerate(zip(xs_num, xs_cat)):
+        T = xn.shape[0]
+        xnum_pad[i, :T, :] = xn
+        if Cc > 0:
+            xcat_pad[i, :T, :] = xc
+            # pad tail with per-feature pad indices
+            if T < T_max:
+                pad_row = torch.tensor(pad_cat_indices, dtype=torch.long).unsqueeze(0).expand(T_max - T, -1)
+                xcat_pad[i, T:, :] = pad_row
+        key_padding_mask[i, :T] = False  # False for valid tokens
+
+    y = torch.stack(ys).view(-1, 1)
+    return xnum_pad, xcat_pad, y, key_padding_mask
 
 
 
@@ -36,7 +97,7 @@ def prepare_data_for_position(position):
     data = pd.read_parquet(f'data/processed/{position}_data.parquet')
     
     # Remove rows with missing target (fantasy_points_ppr, not fantasy_points)
-    data = data[data['fantasy_points_ppr'].notna()].copy()
+    # data = data[data['fantasy_points_ppr'].notna()].copy()
     
     # Define continuous features (based on actual preprocessing output)
     continuous_features = [
@@ -58,10 +119,7 @@ def prepare_data_for_position(position):
         'pass_touchdowns', 'interceptions', 'passer_rating', 'completions',
 
         # Workload & opportunity
-        'offense_snaps', 'offense_pct',
-
-        # Weather/context (when present in raw merges)
-        'temp', 'wind'
+        'offense_snaps', 'offense_pct', 'st_snaps', 'st_pct'
     ]
     
     # Define categorical features
@@ -110,46 +168,70 @@ def prepare_data_for_position(position):
     data_cont = data[continuous_features].copy()
     data[continuous_features] = scaler.fit_transform(data_cont)
     
-    # Split by time (prevents data leakage)
-    train_data = data[data['season'].isin([2019, 2020, 2021, 2022])].copy()
-    val_data = data[data['season'] == 2023].copy()
-    test_data = data[data['season'] == 2024].copy()
-    
-    print(f"\nData split:")
-    print(f"  Train: {len(train_data)} samples (seasons 2019-2022)")
-    print(f"  Val: {len(val_data)} samples (season 2023)")
-    print(f"  Test: {len(test_data)} samples (season 2024)")
-    
-    # Prepare arrays
-    X_num_train = train_data[continuous_features].values
-    X_cat_train = train_data[categorical_features].values
-    y_train = train_data['fantasy_points_ppr'].values.reshape(-1, 1)
-    
-    X_num_val = val_data[continuous_features].values
-    X_cat_val = val_data[categorical_features].values
-    y_val = val_data['fantasy_points_ppr'].values.reshape(-1, 1)
-    
-    X_num_test = test_data[continuous_features].values
-    X_cat_test = test_data[categorical_features].values
-    y_test = test_data['fantasy_points_ppr'].values.reshape(-1, 1)
-    
-    # Get cardinalities for categorical features
-    cat_cardinalities = [
-        len(label_encoders[feat].classes_) 
-        for feat in categorical_features
-    ]
-    
-    print(f"\nTarget variable (fantasy_points_ppr):")
-    print(f"  Train: mean={y_train.mean():.2f}, std={y_train.std():.2f}")
-    print(f"  Val: mean={y_val.mean():.2f}, std={y_val.std():.2f}")
-    print(f"  Test: mean={y_test.mean():.2f}, std={y_test.std():.2f}")
-    
+    # Build sequences: for week n sample, inputs are weeks [< n] for that player
+    # We'll split by the TARGET season (week n row's season)
+    def build_sequences(df: pd.DataFrame):
+        seq_X_num, seq_X_cat, ys, meta = [], [], [], []
+        # We require identifiers
+        pid_col = 'player_display_name' if 'player_display_name' in df.columns else 'player' if 'player' in df.columns else 'full_name'
+        for (pid, season), g in df.groupby([pid_col, 'season'], dropna=False):
+            g = g.sort_values('week')
+            Xn = g[continuous_features].values
+            Xc = g[categorical_features].values if categorical_features else np.zeros((len(g), 0), dtype=np.int64)
+            yt = g['fantasy_points_ppr'].values.reshape(-1, 1)
+            weeks = g['week'].values
+            # For each index i >=1, build a sample with prior weeks 0..i-1 -> target y_i
+            for i in range(1, len(g)):
+                seq_X_num.append(Xn[:i, :].astype(np.float32))
+                seq_X_cat.append(Xc[:i, :].astype(np.int64))
+                ys.append(yt[i])
+                meta.append({'player': pid, 'season': season, 'week': int(weeks[i])})
+        return seq_X_num, seq_X_cat, np.array(ys).astype(np.float32), meta
+
+    # Split by season of the TARGET week (the week being predicted)
+    seasons = data['season'].values
+    train_mask = data['season'].isin([2019, 2020, 2021, 2022])
+    val_mask = data['season'] == 2023
+    test_mask = data['season'] == 2024
+
+    print(f"\nConstructing sequences (prior weeks only) ...")
+    seq_X_num_all, seq_X_cat_all, ys_all, meta_all = build_sequences(data)
+    # Convert meta to arrays for season-based split
+    meta_df = pd.DataFrame(meta_all)
+    train_idx = meta_df['season'].isin([2019, 2020, 2021, 2022]).values
+    val_idx = (meta_df['season'] == 2023).values
+    test_idx = (meta_df['season'] == 2024).values
+
+    seq_X_num_train = [seq_X_num_all[i] for i in range(len(seq_X_num_all)) if train_idx[i]]
+    seq_X_cat_train = [seq_X_cat_all[i] for i in range(len(seq_X_cat_all)) if train_idx[i]]
+    y_train = ys_all[train_idx]
+
+    seq_X_num_val = [seq_X_num_all[i] for i in range(len(seq_X_num_all)) if val_idx[i]]
+    seq_X_cat_val = [seq_X_cat_all[i] for i in range(len(seq_X_cat_all)) if val_idx[i]]
+    y_val = ys_all[val_idx]
+
+    seq_X_num_test = [seq_X_num_all[i] for i in range(len(seq_X_num_all)) if test_idx[i]]
+    seq_X_cat_test = [seq_X_cat_all[i] for i in range(len(seq_X_cat_all)) if test_idx[i]]
+    y_test = ys_all[test_idx]
+
+    # Get cardinalities for categorical features and add +1 for padding index
+    cat_cardinalities = [len(label_encoders[feat].classes_) for feat in categorical_features]
+    cat_cardinalities_padded = [c + 1 for c in cat_cardinalities]
+
+    print(f"\nTarget variable (fantasy_points_ppr) by split:")
+    for name, arr in [('Train', y_train), ('Val', y_val), ('Test', y_test)]:
+        if len(arr) > 0:
+            print(f"  {name}: n={len(arr)} mean={arr.mean():.2f}, std={arr.std():.2f}")
+        else:
+            print(f"  {name}: n=0")
+
     return {
-        'train': (X_num_train, X_cat_train, y_train),
-        'val': (X_num_val, X_cat_val, y_val),
-        'test': (X_num_test, X_cat_test, y_test),
+        'train_seq': (seq_X_num_train, seq_X_cat_train, y_train),
+        'val_seq': (seq_X_num_val, seq_X_cat_val, y_val),
+        'test_seq': (seq_X_num_test, seq_X_cat_test, y_test),
         'num_continuous': len(continuous_features),
-        'cat_cardinalities': cat_cardinalities,
+        'cat_cardinalities_padded': cat_cardinalities_padded,
+        'cat_pad_indices': np.array(cat_cardinalities, dtype=np.int64),  # original max index + 1 used as pad
         'scaler': scaler,
         'label_encoders': label_encoders,
         'feature_names': {
@@ -160,7 +242,7 @@ def prepare_data_for_position(position):
 
 
 
-def train_model(model, train_loader, val_loader, position='model', epochs=50, lr=1e-4, device='cpu'):
+def train_model(model, train_loader, val_loader, position='model', epochs=50, lr=1e-4, device='cpu', is_sequence: bool = False):
     """
     Train FT-Transformer model with improved monitoring
     """
@@ -184,11 +266,19 @@ def train_model(model, train_loader, val_loader, position='model', epochs=50, lr
         train_loss = 0
         batch_count = 0
         
-        for X_num, X_cat, y in train_loader:
-            X_num, X_cat, y = X_num.to(device), X_cat.to(device), y.to(device)
-            
+        for batch in train_loader:
+            if is_sequence:
+                X_num, X_cat, y, key_padding_mask = batch
+                X_num, X_cat, y = X_num.to(device), X_cat.to(device), y.to(device)
+                key_padding_mask = key_padding_mask.to(device)
+                preds = model(X_num, X_cat, key_padding_mask)
+            else:
+                X_num, X_cat, y = batch
+                X_num, X_cat, y = X_num.to(device), X_cat.to(device), y.to(device)
+                preds = model(X_num, X_cat)
+
             optimizer.zero_grad()
-            predictions = model(X_num, X_cat)
+            predictions = preds
             loss = criterion(predictions, y)
             loss.backward()
             
@@ -209,9 +299,16 @@ def train_model(model, train_loader, val_loader, position='model', epochs=50, lr
         batch_count = 0
         
         with torch.no_grad():
-            for X_num, X_cat, y in val_loader:
-                X_num, X_cat, y = X_num.to(device), X_cat.to(device), y.to(device)
-                predictions = model(X_num, X_cat)
+            for batch in val_loader:
+                if is_sequence:
+                    X_num, X_cat, y, key_padding_mask = batch
+                    X_num, X_cat, y = X_num.to(device), X_cat.to(device), y.to(device)
+                    key_padding_mask = key_padding_mask.to(device)
+                    predictions = model(X_num, X_cat, key_padding_mask)
+                else:
+                    X_num, X_cat, y = batch
+                    X_num, X_cat, y = X_num.to(device), X_cat.to(device), y.to(device)
+                    predictions = model(X_num, X_cat)
                 loss = criterion(predictions, y)
                 val_loss += loss.item()
                 batch_count += 1
@@ -240,7 +337,7 @@ def train_model(model, train_loader, val_loader, position='model', epochs=50, lr
 
 
 
-def evaluate_model(model, test_loader, device='cpu'):
+def evaluate_model(model, test_loader, device='cpu', is_sequence: bool = False):
     """
     Evaluate model on test set with detailed metrics
     """
@@ -249,11 +346,19 @@ def evaluate_model(model, test_loader, device='cpu'):
     actuals = []
     
     with torch.no_grad():
-        for X_num, X_cat, y in test_loader:
-            X_num, X_cat = X_num.to(device), X_cat.to(device)
-            pred = model(X_num, X_cat)
+        for batch in test_loader:
+            if is_sequence:
+                X_num, X_cat, y, key_padding_mask = batch
+                X_num, X_cat = X_num.to(device), X_cat.to(device)
+                key_padding_mask = key_padding_mask.to(device)
+                pred = model(X_num, X_cat, key_padding_mask)
+                actuals.extend(y.numpy().flatten())
+            else:
+                X_num, X_cat, y = batch
+                X_num, X_cat = X_num.to(device), X_cat.to(device)
+                pred = model(X_num, X_cat)
+                actuals.extend(y.numpy().flatten())
             predictions.extend(pred.cpu().numpy().flatten())
-            actuals.extend(y.numpy().flatten())
     
     predictions = np.array(predictions)
     actuals = np.array(actuals)
@@ -371,7 +476,7 @@ if __name__ == '__main__':
             # Prepare data
             data_dict = prepare_data_for_position(position)
             
-            # Optional: Hyperparameter optimization (uncomment to enable)
+            # Optional: Hyperparameter optimization
             # best_params = hyperparameter_optimization(data_dict, position, n_trials=20)
 
             # Resume-from-checkpoint logic
@@ -407,13 +512,15 @@ if __name__ == '__main__':
                 }
 
             # Create model (new or from checkpoint)
-            model = FTTransformer(
+            # Use temporal transformer (sequence model) to ensure only prior weeks are used as input
+            model = TemporalTransformer(
                 num_continuous=data_dict['num_continuous'],
-                cat_cardinalities=data_dict['cat_cardinalities'],
-                d_token=best_params['d_token'],
+                cat_cardinalities_padded=data_dict['cat_cardinalities_padded'],
+                d_model=best_params['d_token'],
                 n_layers=best_params['n_layers'],
                 n_heads=best_params['n_heads'],
-                dropout=best_params['dropout']
+                dropout=best_params['dropout'],
+                max_len=64,
             )
 
             if loaded_from_checkpoint and checkpoint is not None:
@@ -438,19 +545,22 @@ if __name__ == '__main__':
             print(f"\nModel Parameters:")
             print(f"  Total parameters: {sum(p.numel() for p in model.parameters()):,}")
             
-            # Create dataloaders
-            train_dataset = FantasyDataset(*data_dict['train'])
-            val_dataset = FantasyDataset(*data_dict['val'])
-            test_dataset = FantasyDataset(*data_dict['test'])
-            
-            train_loader = DataLoader(train_dataset, batch_size=best_params['batch_size'], shuffle=True)
-            val_loader = DataLoader(val_dataset, batch_size=best_params['batch_size'])
-            test_loader = DataLoader(test_dataset, batch_size=best_params['batch_size'])
+            # Create sequence dataloaders with padding collate_fn
+            train_dataset = SequenceFantasyDataset(*data_dict['train_seq'])
+            val_dataset = SequenceFantasyDataset(*data_dict['val_seq'])
+            test_dataset = SequenceFantasyDataset(*data_dict['test_seq'])
+
+            pad_idx = data_dict['cat_pad_indices'] if len(data_dict['cat_pad_indices']) > 0 else np.array([])
+            collate = (lambda batch: sequence_collate_fn(batch, pad_idx))
+
+            train_loader = DataLoader(train_dataset, batch_size=best_params['batch_size'], shuffle=True, collate_fn=collate)
+            val_loader = DataLoader(val_dataset, batch_size=best_params['batch_size'], collate_fn=collate)
+            test_loader = DataLoader(test_dataset, batch_size=best_params['batch_size'], collate_fn=collate)
             
             # Train
             model, train_losses, val_losses = train_model(
-                model, train_loader, val_loader, 
-                position=position, epochs=50, lr=best_params['lr'], device=device
+                model, train_loader, val_loader,
+                position=position, epochs=50, lr=best_params['lr'], device=device, is_sequence=True
             )
             
             # Load best model
@@ -458,7 +568,7 @@ if __name__ == '__main__':
                 model.load_state_dict(torch.load(f'models/best_model_{position}.pt', map_location=device))
             
             # Evaluate
-            eval_results = evaluate_model(model, test_loader, device=device)
+            eval_results = evaluate_model(model, test_loader, device=device, is_sequence=True)
             results_summary[position] = eval_results
             
             # Save artifacts
@@ -468,7 +578,7 @@ if __name__ == '__main__':
                 'label_encoders': data_dict['label_encoders'],
                 'feature_names': data_dict['feature_names'],
                 'num_continuous': data_dict['num_continuous'],
-                'cat_cardinalities': data_dict['cat_cardinalities'],
+                'cat_cardinalities_padded': data_dict['cat_cardinalities_padded'],
                 'hyperparameters': best_params,
                 'eval_results': eval_results
             }, f'models/{position}_transformer_complete.pt')
