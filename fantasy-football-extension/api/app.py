@@ -99,9 +99,9 @@ def _prepare_batch(df: pd.DataFrame, artifact: Dict) -> Tuple[np.ndarray, np.nda
 
 
 def load_weekly_player_data(position: str, week: int, season: int) -> pd.DataFrame:
-    """Load featured data for a given position/week/season. If not available, fallback to the
-    latest available (max season/week) and include a note in logs."""
-    fp = os.path.join(DATA_DIR, 'processed', f'{position}_featured.parquet')
+    """Load cleaned data for a given position/week/season (no engineered features).
+    If the requested week is unavailable, fallback to the latest available and log it."""
+    fp = os.path.join(DATA_DIR, 'processed', f'{position}_data.parquet')
     if not os.path.exists(fp):
         raise FileNotFoundError(f"Processed data not found for {position}: {fp}")
     df = pd.read_parquet(fp)

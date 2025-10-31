@@ -7,7 +7,7 @@ A comprehensive fantasy football prediction system using FT-Transformer deep lea
 This project predicts fantasy football player performance (PPR scoring) using:
 - **Next Gen Stats (NGS)** tracking data (receiving, rushing, passing metrics)
 - **Game context** (Vegas lines, weather, injuries, snap counts)
-- **Engineered features** (rolling averages, opponent strength, player trends)
+- Optional engineered features (rolling averages, opponent strength, player trends)
 - **FT-Transformer** neural network architecture for tabular data
 
 ## 📊 Features
@@ -28,8 +28,7 @@ fantasy-football-extension/
 │   ├── raw/                      # Raw NFL data (parquet files)
 │   └── processed/                # Cleaned and featured data
 ├── preprocessing/                # Data pipeline
-│   ├── clean_data.py            # Merge and clean raw data
-│   └── engineer_features.py     # Feature engineering
+│   └── clean_data.py            # Merge and clean raw data (no engineered features)
 ├── models/                       # Model training
 │   ├── ft_transformer.py        # FT-Transformer architecture
 │   └── train_position.py        # Training script
@@ -84,11 +83,8 @@ This downloads NFL data for seasons 2019-2024:
 ### Data Preprocessing
 
 ```bash
-# 1. Clean and merge data
+# Clean and merge data (feature engineering disabled)
 python preprocessing/clean_data.py
-
-# 2. Engineer features
-python preprocessing/engineer_features.py
 ```
 
 ### Model Training
@@ -163,19 +159,19 @@ best_params = hyperparameter_optimization(data_dict, position, n_trials=20)
 
 ## 📊 Features Used
 
-### Continuous Features (35)
-- **NGS Receiving:** cushion, separation, air yards, YAC, catch %
-- **NGS Rushing:** efficiency, time to LOS, yards over expected
-- **NGS Passing:** time to throw, air yards, completion % above expected
-- **Workload:** snaps, snap %, rolling averages
-- **Context:** Vegas lines, weather, opponent strength
-- **Trends:** fantasy points trend, injury severity, rest days
+With feature engineering disabled, training and inference use columns available from the cleaned merges:
 
-### Categorical Features (13)
-- Teams (home/away)
+### Continuous features
+- NGS Receiving: cushion, separation, intended air yards, YAC, catch % (plus counts like targets/receptions when present)
+- NGS Rushing: efficiency, time to LOS, rush yards over expected, attempts/yards/TDs
+- NGS Passing: time to throw, completed/intended air yards, air distance, attempts/yards/TDs/INTs, passer rating
+- Workload: offensive snaps and snap percentage
+- Weather (if present): temperature, wind
+
+### Categorical features
+- Teams: recent_team, opponent_team, depth_team
 - Position
-- Game flags (home, favored, dome, early/late season, weather)
-- Injury status and type
+- Injury status fields: report_status, practice_status, report_primary_injury
 
 ## 🛠️ Development
 

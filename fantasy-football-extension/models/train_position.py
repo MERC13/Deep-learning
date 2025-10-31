@@ -32,8 +32,8 @@ def prepare_data_for_position(position):
     Load and prepare data for specific position.
     Aligns with preprocessing/engineering pipeline.
     """
-    # Load featured data
-    data = pd.read_parquet(f'data/processed/{position}_featured.parquet')
+    # Load data
+    data = pd.read_parquet(f'data/processed/{position}_data.parquet')
     
     # Remove rows with missing target (fantasy_points_ppr, not fantasy_points)
     data = data[data['fantasy_points_ppr'].notna()].copy()
@@ -42,43 +42,35 @@ def prepare_data_for_position(position):
     continuous_features = [
         # NGS Receiving metrics (WR/TE primarily, but also tracked for others)
         'avg_cushion', 'avg_separation', 'avg_intended_air_yards',
-        'percent_share_of_intended_air_yards', 'avg_yac', 
-        'avg_yac_above_expectation', 'catch_percentage',
-        
-        # NGS Rushing metrics (RB primarily, but QB rushing also tracked)
-        'efficiency', 'percent_attempts_gte_eight_defenders', 
-        'avg_time_to_los', 'avg_rush_yards', 'rush_yards_over_expected',
-        'rush_yards_over_expected_per_att', 'rush_pct_over_expected',
-        
-        # NGS Passing metrics (QB only)
-        'avg_time_to_throw', 'avg_completed_air_yards', 
-        'avg_intended_air_yards_pass', 'avg_air_yards_differential', 
-        'aggressiveness', 'completion_percentage_above_expectation',
-        
+        'percent_share_of_intended_air_yards', 'avg_yac', 'avg_expected_yac',
+        'avg_yac_above_expectation', 'catch_percentage', 'receptions',
+        'targets', 'yards', 'rec_touchdowns',
+
+        # NGS Rushing metrics
+        'efficiency', 'percent_attempts_gte_eight_defenders', 'avg_time_to_los',
+        'avg_rush_yards', 'rush_yards_over_expected', 'rush_attempts',
+        'rush_yards', 'rush_touchdowns', 'expected_rush_yards',
+
+        # NGS Passing metrics
+        'avg_time_to_throw', 'avg_completed_air_yards', 'avg_intended_air_yards_pass',
+        'avg_air_yards_differential', 'aggressiveness', 'completion_percentage',
+        'avg_air_distance', 'max_air_distance', 'attempts', 'pass_yards',
+        'pass_touchdowns', 'interceptions', 'passer_rating', 'completions',
+
         # Workload & opportunity
-        'offense_snaps', 'offense_pct', 'snap_pct', 'snap_pct_rolling_3',
-        
-        # Game context & Vegas lines
-        'spread_magnitude', 'game_total', 'implied_team_total',
-        'temp', 'wind',
-        
-        # Engineered features
-        'fantasy_trend', 'opp_def_rank_vs_pos', 'injury_severity',
-        'games_played', 'days_rest', 'week_of_season',
-        
-        # Position-specific rolling features (created in engineer_features.py)
-        'redzone_touches_rolling_3',  # RB
-        'air_yards_share_rolling_3',  # WR/TE
-        'target_share', 'carry_share'  # Position-dependent
+        'offense_snaps', 'offense_pct',
+
+        # Weather/context (when present in raw merges)
+        'temp', 'wind'
     ]
     
     # Define categorical features
     categorical_features = [
         'recent_team', 'opponent_team', 'position',
-        'is_home', 'is_division_game', 'is_favored', 'is_dome',
-        'is_early_season', 'is_late_season',
-        'is_cold', 'is_hot',
-        'report_status', 'practice_status', 'report_primary_injury'
+        # Injury-related categorical fields (from raw merges)
+        'report_status', 'practice_status', 'report_primary_injury',
+        # Depth chart team when available
+        'depth_team'
     ]
     
     # Filter to available columns (handle position-specific features)

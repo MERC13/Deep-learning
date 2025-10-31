@@ -52,6 +52,21 @@ def load_and_merge_data():
     injuries = injuries[injuries_cols]
     depth_charts = depth_charts[depth_cols]
     
+    # Normalize key types and clean strings to improve join quality
+    def _to_int_series(s: pd.Series) -> pd.Series:
+        # Use pandas nullable Int64 to support missing values while enabling numeric sort/merge
+        return pd.to_numeric(s, errors='coerce').astype('Int64')
+
+    for df in [weekly, ngs_receiving, ngs_rushing, ngs_passing, snaps, injuries, depth_charts]:
+        if 'season' in df.columns:
+            df['season'] = _to_int_series(df['season'])
+        if 'week' in df.columns:
+            df['week'] = _to_int_series(df['week'])
+        # Strip whitespace in common name keys
+        for name_col in ['player_display_name', 'full_name', 'player']:
+            if name_col in df.columns and df[name_col].dtype == object:
+                df[name_col] = df[name_col].astype(str).str.strip()
+    
     # Merge on player_display_name (common key across NGS datasets)
     data = weekly.merge(
         ngs_receiving, 
@@ -121,122 +136,153 @@ def filter_by_position(data, position):
 
 def handle_missing_values(data, position):
     """
-    Intelligent missing value imputation by position and data source.
-    Strategy depends on why data is missing (position-irrelevant, inactive, data gaps, etc.)
+    Handle missing values with position-aware logic and time-aware imputation.
+
+    Rules
+    - Position-inapplicable feature families get filled with 0 (e.g., passing metrics for RB/WR/TE, receiving for QB).
+    - If a player didn't play (offense_snaps == 0 or NaN), set fantasy_points_ppr to 0 for that week.
+    - Time-series NGS metrics are forward/backward filled per player along their weekly timeline.
+    - Categorical statuses default to sensible labels (Healthy/None/Unknown).
+    - Remaining numeric NaNs are filled with 0 as a safe default.
     """
     data = data.copy()
-    
-    # 1. Missing because stat doesn't apply to position -> fill with 0
-    position_inapplicable = {
-        'RB': {
-            'passing': ['avg_time_to_throw', 'avg_completed_air_yards', 
-                       'avg_intended_air_yards', 'avg_air_yards_differential',
-                       'aggressiveness', 'completion_percentage_above_expectation']
-        },
-        'WR': {
-            'passing': ['avg_time_to_throw', 'avg_completed_air_yards', 
-                       'avg_intended_air_yards', 'avg_air_yards_differential',
-                       'aggressiveness', 'completion_percentage_above_expectation'],
-            'rushing': ['efficiency', 'percent_attempts_gte_eight_defenders',
-                       'avg_time_to_los', 'avg_rush_yards', 'rush_yards_over_expected',
-                       'rush_yards_over_expected_per_att', 'rush_pct_over_expected']
-        },
-        'TE': {
-            'passing': ['avg_time_to_throw', 'avg_completed_air_yards', 
-                       'avg_intended_air_yards', 'avg_air_yards_differential',
-                       'aggressiveness', 'completion_percentage_above_expectation'],
-            'rushing': ['efficiency', 'percent_attempts_gte_eight_defenders',
-                       'avg_time_to_los', 'avg_rush_yards', 'rush_yards_over_expected',
-                       'rush_yards_over_expected_per_att', 'rush_pct_over_expected']
-        },
-        'QB': {
-            'receiving': ['avg_cushion', 'avg_separation', 'avg_intended_air_yards',
-                         'percent_share_of_intended_air_yards', 'avg_yac', 
-                         'avg_yac_above_expectation', 'catch_percentage'],
-            'rushing': ['efficiency', 'percent_attempts_gte_eight_defenders',
-                       'avg_time_to_los', 'avg_rush_yards', 'rush_yards_over_expected',
-                       'rush_yards_over_expected_per_att', 'rush_pct_over_expected']
-        }
-    }
-    
-    if position in position_inapplicable:
-        for stat_type, cols in position_inapplicable[position].items():
-            for col in cols:
-                if col in data.columns:
-                    data[col] = data[col].fillna(0)
-    
-    # 2. Missing because player was inactive/didn't play
-    # If offense_snaps is 0 or NaN, player didn't play -> fantasy_points = 0
-    if 'offense_snaps' in data.columns:
-        data['was_inactive'] = (data['offense_snaps'] == 0) | (data['offense_snaps'].isna())
-        data.loc[data['was_inactive'], 'fantasy_points_ppr'] = 0
-    
-    # 3. Missing NGS metrics (not all seasons/weeks tracked)
-    # Use player-level forward fill, then backward fill
-    ngs_cols = [col for col in data.columns 
-                if any(x in col for x in ['avg_', 'efficiency', 'percent_', 'above_expectation'])]
-    
-    for col in ngs_cols:
+
+    # Ensure season/week are numeric for stable time sorting
+    for col in ['season', 'week']:
         if col in data.columns:
-            # Forward fill within each player's timeline
-            def safe_fill(x):
-                if x.isna().all():
-                    return x  # Return as-is if all NaN
-                return x.fillna(method='ffill').fillna(method='bfill')
-            
-            data[col] = data.groupby('player_id')[col].transform(safe_fill)
-    
-    # 4. Missing snap count data -> impute with player's season median
-    if 'offense_pct' in data.columns:
-        def safe_median(x):
-            if x.isna().all() or len(x.dropna()) == 0:
-                return x  # Return as-is if all NaN
-            return x.fillna(x.median())
-        
-        data['offense_pct'] = data.groupby('player_id')['offense_pct'].transform(safe_median)
-    
-    # 5. Missing injury status -> assume no report = healthy
-    injury_status_cols = ['report_status', 'practice_status']
-    for col in injury_status_cols:
+            data[col] = pd.to_numeric(data[col], errors='coerce').astype('Int64')
+    # Clean common string identifiers
+    for name_col in ['player_display_name', 'full_name', 'player']:
+        if name_col in data.columns and data[name_col].dtype == object:
+            data[name_col] = data[name_col].astype(str).str.strip()
+
+    # Choose a player key available in the merged dataset
+    possible_keys = ['player_display_name', 'full_name', 'player', 'player_id', 'player_gsis_id', 'gsis_id']
+    player_key = next((k for k in possible_keys if k in data.columns), None)
+
+    # Helper: time-aware ffill/bfill within each player's weekly timeline
+    def ffill_bfill_by_player(df: pd.DataFrame, col: str) -> pd.Series:
+        if player_key is None or col not in df.columns:
+            return df[col]
+        # Preserve original order and create a stable per-row order key
+        order_key = np.arange(len(df))
+        tmp = df[[player_key, 'season', 'week', col]].copy()
+        tmp['_order'] = order_key
+        # Sort by player, season, week, then original order to stabilize
+        sort_cols = [player_key]
+        if 'season' in tmp.columns:
+            sort_cols.append('season')
+        if 'week' in tmp.columns:
+            sort_cols.append('week')
+        sort_cols.append('_order')
+        tmp_sorted = tmp.sort_values(sort_cols)
+        def safe_fill(x: pd.Series) -> pd.Series:
+            return x.ffill().bfill() if not x.isna().all() else x
+        tmp_sorted[col] = tmp_sorted.groupby(player_key, dropna=False)[col].transform(safe_fill)
+        # Restore original order
+        tmp_restored = tmp_sorted.sort_values('_order')
+        return tmp_restored[col].reset_index(drop=True)
+
+    # Define feature families present in our merged dataset (keep only columns that exist)
+    passing_family = [
+        'avg_time_to_throw', 'avg_completed_air_yards', 'avg_intended_air_yards',
+        'avg_air_yards_differential', 'aggressiveness', 'completion_percentage',
+        'avg_air_distance', 'max_air_distance', 'attempts', 'pass_yards',
+        'pass_touchdowns', 'interceptions', 'passer_rating', 'completions'
+    ]
+    receiving_family = [
+        'avg_cushion', 'avg_separation', 'avg_intended_air_yards',
+        'percent_share_of_intended_air_yards', 'avg_yac', 'avg_expected_yac',
+        'avg_yac_above_expectation', 'catch_percentage', 'receptions',
+        'targets', 'yards', 'rec_touchdowns'
+    ]
+    rushing_family = [
+        'efficiency', 'percent_attempts_gte_eight_defenders', 'avg_time_to_los',
+        'avg_rush_yards', 'rush_yards_over_expected', 'rush_attempts',
+        'rush_yards', 'rush_touchdowns', 'expected_rush_yards',
+        'rush_yards_over_expected_per_att'
+    ]
+
+    passing_cols = [c for c in passing_family if c in data.columns]
+    receiving_cols = [c for c in receiving_family if c in data.columns]
+    rushing_cols = [c for c in rushing_family if c in data.columns]
+
+    # 1) Position-inapplicable families -> fill with 0 when missing
+    if position == 'QB':
+        cols_to_zero = receiving_cols + rushing_cols  # QBs may rush, but missing values imply 0
+    elif position == 'RB':
+        cols_to_zero = passing_cols
+    elif position in ('WR', 'TE'):
+        cols_to_zero = passing_cols + rushing_cols
+    else:
+        cols_to_zero = passing_cols + receiving_cols + rushing_cols
+
+    if cols_to_zero:
+        data[cols_to_zero] = data[cols_to_zero].fillna(0)
+
+    # 2) Player inactive -> fantasy points 0
+    if 'offense_snaps' in data.columns:
+        # Ensure numeric for comparisons
+        data['offense_snaps'] = pd.to_numeric(data['offense_snaps'], errors='coerce')
+        data['was_inactive'] = (data['offense_snaps'] == 0) | (data['offense_snaps'].isna())
+        if 'fantasy_points_ppr' in data.columns:
+            data.loc[data['was_inactive'], 'fantasy_points_ppr'] = 0
+
+    # 3) Time-series imputation for NGS metrics
+    ngs_like_cols = [
+        c for c in data.columns
+        if any(x in c for x in ['avg_', 'efficiency', 'percent_', 'above_expectation', 'distance', 'rating', 'yards'])
+    ]
+    # We'll include completion/catch percentage as well
+    for c in ['completion_percentage', 'catch_percentage', 'expected_completion_percentage', 'completion_percentage_above_expectation', 'avg_air_yards_to_sticks']:
+        if c in data.columns and c not in ngs_like_cols:
+            ngs_like_cols.append(c)
+
+    for col in ngs_like_cols:
+        try:
+            data[col] = ffill_bfill_by_player(data, col)
+        except Exception:
+            pass
+
+    # 4) Snap percentage imputation: player's median
+    if 'offense_pct' in data.columns and player_key is not None:
+        def safe_median_fill(s: pd.Series) -> pd.Series:
+            if s.isna().all():
+                return s
+            return s.fillna(s.median())
+        data['offense_pct'] = (
+            data.groupby(player_key)['offense_pct']
+                .transform(safe_median_fill)
+        )
+
+    # 5) Categorical defaults
+    for col in ['report_status', 'practice_status']:
         if col in data.columns:
             data[col] = data[col].fillna('Healthy')
-    
-    # 6. Missing primary injury -> no injury
     if 'report_primary_injury' in data.columns:
         data['report_primary_injury'] = data['report_primary_injury'].fillna('None')
-    
-    # 7. Missing Vegas metrics (weather, spreads) -> use league average or median
-    vegas_numeric = ['spread_line', 'total_line', 'temp', 'wind']
-    for col in vegas_numeric:
-        if col in data.columns:
-            data[col] = data[col].fillna(data[col].median())
-    
-    # 8. Missing roof (stadium type) -> impute with mode or 'Unknown'
     if 'roof' in data.columns:
         data['roof'] = data['roof'].fillna('Unknown')
-    
-    # 9. Catch percentage, efficiency metrics might be 0 if no attempts
-    # Don't fill these to 0 - keep NaN so model knows it wasn't applicable
-    efficiency_cols = ['catch_percentage', 'efficiency', 'aggressiveness']
-    for col in efficiency_cols:
-        if col in data.columns:
-            # Only fill when we have data to interpolate
-            def safe_fill(x):
-                if x.isna().all():
-                    return x  # Return as-is if all NaN
-                return x.fillna(method='ffill').fillna(method='bfill')
-            
-            data[col] = data.groupby('player_id')[col].transform(safe_fill)
-    
-    # 10. Final pass: remaining NaNs -> 0 (safest default)
-    remaining_nans = data.select_dtypes(include=[np.number]).columns
-    data[remaining_nans] = data[remaining_nans].fillna(0)
-    
+    if 'surface' in data.columns:
+        data['surface'] = data['surface'].fillna('Unknown')
+    for wcol in ['temp', 'wind']:
+        if wcol in data.columns:
+            data[wcol] = pd.to_numeric(data[wcol], errors='coerce').fillna(0)
+    if 'depth_team' in data.columns:
+        data['depth_team'] = data['depth_team'].fillna('Unknown')
+
+    # 6) Final: fill remaining numeric gaps with 0
+    numeric_cols = data.select_dtypes(include=[np.number]).columns
+    data[numeric_cols] = data[numeric_cols].fillna(0)
+
+    # Debug summary
+    total_nans = int(data.isna().sum().sum())
     print(f"Missing value handling complete for {position}")
-    print(f"Final NaNs remaining: {data.isna().sum().sum()}")
-    if data.isna().sum().sum() > 0:
-        print(f"Columns with NaNs:\n{data.isna().sum()[data.isna().sum() > 0]}")
-    
+    print(f"Final NaNs remaining: {total_nans}")
+    if total_nans > 0:
+        nan_cols = data.isna().sum()
+        print(f"Columns with NaNs:\n{nan_cols[nan_cols > 0]}")
+
     return data
 
 if __name__ == '__main__':
