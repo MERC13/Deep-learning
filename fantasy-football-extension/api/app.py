@@ -141,7 +141,8 @@ def _prepare_batch(df: pd.DataFrame, artifact: Dict) -> Tuple[np.ndarray, np.nda
 
     # Scale numeric
     scaler = artifact['scaler']
-    X_num = scaler.transform(cont_df.values.astype(float)) if len(cont_cols) else np.zeros((len(df), 0))
+    # Pass a DataFrame with column names to avoid sklearn feature-name warning
+    X_num = scaler.transform(cont_df) if len(cont_cols) else np.zeros((len(df), 0))
 
     # Encode categoricals
     X_cat_list = []
@@ -186,9 +187,9 @@ def _prepare_sequence_for_player(
             med = df_all[c].median() if c in df_all.columns else hist[c].median()
             hist[c] = hist[c].fillna(med)
 
-    # Scale numeric using saved scaler
+    # Scale numeric using saved scaler; keep DataFrame to preserve feature names
     scaler = artifact['scaler']
-    X_num_seq = scaler.transform(hist[cont_cols].values.astype(float)) if len(cont_cols) else np.zeros((len(hist), 0))
+    X_num_seq = scaler.transform(hist[cont_cols]) if len(cont_cols) else np.zeros((len(hist), 0))
 
     # Encode categoricals with saved label encoders, unknown -> 0
     X_cat_list: List[np.ndarray] = []
@@ -291,13 +292,13 @@ def predict_player():
             # Build from provided history objects
             cont_cols = feature_names['continuous']
             cat_cols = feature_names['categorical']
-            # Build a DataFrame-like list to reuse encoders/scaler
+            # Build a DataFrame so scaler sees feature names
             # Fill missing numeric with zeros then scale
-            Xn = []
+            Xn_rows = []
             for h in history:
-                Xn.append([h.get(c, 0) for c in cont_cols])
-            Xn = np.array(Xn, dtype=float)
-            Xn = artifact['scaler'].transform(Xn) if len(cont_cols) else np.zeros((len(history), 0))
+                Xn_rows.append({c: h.get(c, 0) for c in cont_cols})
+            Xn_df = pd.DataFrame(Xn_rows, columns=cont_cols)
+            Xn = artifact['scaler'].transform(Xn_df) if len(cont_cols) else np.zeros((len(history), 0))
 
             Xc_cols: List[np.ndarray] = []
             for c in cat_cols:
@@ -330,9 +331,10 @@ def predict_player():
         # Flat model path (backward-compatible)
         scaler = artifact['scaler']
         label_encoders = artifact['label_encoders']
-        # Prepare features
-        X_num = [features.get(feat, 0) for feat in feature_names['continuous']]
-        X_num = scaler.transform(np.array([X_num])) if len(X_num) else np.zeros((1, 0))
+        # Prepare features (use DataFrame to preserve names)
+        cont_cols = feature_names['continuous']
+        X_num_df = pd.DataFrame([{c: features.get(c, 0) for c in cont_cols}], columns=cont_cols)
+        X_num = scaler.transform(X_num_df) if len(cont_cols) else np.zeros((1, 0))
         X_cat = [
             _encode_categorical_value(label_encoders[feat], features.get(feat, 'UNK'))
             for feat in feature_names['categorical']
