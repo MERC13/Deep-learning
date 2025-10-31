@@ -16,44 +16,32 @@ def load_and_merge_data():
     # Load context data
     snaps = pd.read_parquet('data/raw/snaps.parquet')
     injuries = pd.read_parquet('data/raw/injuries.parquet')
-    vegas = pd.read_parquet('data/raw/vegas.parquet')
+    depth_charts = pd.read_parquet('data/raw/depth.parquet')
 
     # Select features for predicting fantasy points
-    # Target: fantasy_points_ppr
-    # Keep identifiers and target only from weekly
-    weekly_cols = ['player_id', 'player_name', 'player_display_name', 'position', 
-                   'season', 'week', 'opponent_team', 'recent_team', 
-                   'fantasy_points_ppr']  # TARGET - remove non-PPR version
-    
-    # NGS receiving: separation, cushion, and efficiency metrics
-    ngs_rec_cols = ['season', 'week', 'player_display_name', 'team_abbr',
+    weekly_cols = ['player_id', 'player_display_name', 'season', 'week',
+                   'position', 'recent_team', 'opponent_team', 'fantasy_points', 'fantasy_points_ppr']
+    ngs_rec_cols = ['season', 'week', 'player_display_name', 'player_gsis_id',
                     'avg_cushion', 'avg_separation', 'avg_intended_air_yards',
-                    'percent_share_of_intended_air_yards', 'avg_yac', 
-                    'avg_yac_above_expectation', 'catch_percentage']
-    
-    # NGS rushing: efficiency and workload metrics
-    ngs_rush_cols = ['season', 'week', 'player_display_name', 'team_abbr',
+                    'percent_share_of_intended_air_yards', 'avg_yac', 'avg_expected_yac',
+                    'avg_yac_above_expectation', 'catch_percentage', 'receptions',
+                    'targets', 'yards', 'rec_touchdowns']
+    ngs_rush_cols = ['season', 'week', 'player_display_name', 'player_gsis_id',
                      'efficiency', 'percent_attempts_gte_eight_defenders', 
-                     'avg_time_to_los', 'avg_rush_yards', 'rush_yards_over_expected',
-                     'rush_yards_over_expected_per_att', 'rush_pct_over_expected']
-    
-    # NGS passing: decision-making and arm talent metrics
-    ngs_pass_cols = ['season', 'week', 'player_display_name', 'team_abbr',
+                     'avg_time_to_los', 'avg_rush_yards', 'rush_yards_over_expected', 'rush_attempts',
+                     'rush_yards', 'rush_touchdowns', 'expected_rush_yards']
+    ngs_pass_cols = ['season', 'week', 'player_display_name', 'player_gsis_id',
                      'avg_time_to_throw', 'avg_completed_air_yards', 
                      'avg_intended_air_yards', 'avg_air_yards_differential',
-                     'aggressiveness', 'completion_percentage_above_expectation']
-    
-    # Snaps: workload is a strong predictor of fantasy points
-    snaps_cols = ['season', 'week', 'player', 'team', 'opponent',
-                  'offense_snaps', 'offense_pct', 'defense_snaps', 'defense_pct']
-    
-    # Injuries: status matters for production
+                     'aggressiveness', 'completion_percentage', 'avg_air_distance', 'max_air_distance',
+                     'attempts', 'pass_yards', 'pass_touchdowns', 'interceptions', 'passer_rating', 'completions']
+    snaps_cols = ['season', 'week', 'player',
+                  'offense_snaps', 'offense_pct', 'st_snaps', 'st_pct']
     injuries_cols = ['season', 'week', 'gsis_id', 'full_name',
                      'report_primary_injury', 'report_status', 'practice_status']
+    depth_cols = ['season', 'week', 'full_name', 'gsis_id',
+                  'depth_team']
     
-    # Vegas: line movement, rest days, and game environment
-    vegas_cols = ['season', 'week', 'away_team', 'home_team', 'spread_line',
-                  'total_line', 'temp', 'wind', 'roof']  # Added roof for covered stadiums
     
     # Filter to relevant columns
     weekly = weekly[weekly_cols]
@@ -62,7 +50,7 @@ def load_and_merge_data():
     ngs_passing = ngs_passing[ngs_pass_cols]
     snaps = snaps[snaps_cols]
     injuries = injuries[injuries_cols]
-    vegas = vegas[vegas_cols]
+    depth_charts = depth_charts[depth_cols]
     
     # Merge on player_display_name (common key across NGS datasets)
     data = weekly.merge(
@@ -88,16 +76,14 @@ def load_and_merge_data():
         how='left',
         suffixes=('', '_pass')
     )
-    
-    # Merge snaps on player name and team
+
     data = data.merge(
         snaps,
-        left_on=['player_display_name', 'recent_team', 'season', 'week'],
-        right_on=['player', 'team', 'season', 'week'],
-        how='left'
+        left_on=['player_display_name', 'season', 'week'],
+        right_on=['player', 'season', 'week'],
+        how='left',
+        suffixes=('', '_snaps')
     )
-    
-    # Merge injuries
     data = data.merge(
         injuries,
         left_on=['player_display_name', 'season', 'week'],
@@ -106,22 +92,13 @@ def load_and_merge_data():
         suffixes=('', '_inj')
     )
     
-    # Merge vegas context (handling home/away teams)
-    data_away = data.merge(
-        vegas,
-        left_on=['recent_team', 'season', 'week', 'opponent_team'],
-        right_on=['away_team', 'season', 'week', 'home_team'],
-        how='left'
+    data = data.merge(
+        depth_charts,
+        left_on=['player_display_name', 'season', 'week'],
+        right_on=['full_name', 'season', 'week'],
+        how='left',
+        suffixes=('', '_depth')
     )
-    
-    data_home = data.merge(
-        vegas,
-        left_on=['recent_team', 'season', 'week', 'opponent_team'],
-        right_on=['home_team', 'season', 'week', 'away_team'],
-        how='left'
-    )
-    
-    data = data_away.fillna(data_home)
     
     print(f"Merged dataset shape: {data.shape}")
     return data
@@ -132,7 +109,7 @@ def filter_by_position(data, position):
     """
     position_filters = {
         'QB': ['QB'],
-        'RB': ['RB', 'FB'],  # Include fullbacks
+        'RB': ['RB', 'FB'],
         'WR': ['WR'],
         'TE': ['TE']
     }

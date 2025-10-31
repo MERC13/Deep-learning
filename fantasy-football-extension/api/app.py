@@ -13,10 +13,10 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 MODELS_DIR = os.path.join(ROOT_DIR, 'models')
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 sys.path.append(MODELS_DIR)
-from ft_transformer import FTTransformer  # noqa: E402
+from ft_transformer import FTTransformer
 
 app = Flask(__name__)
-CORS(app)  # Allow Edge extension to call API
+CORS(app)
 
 def _build_model_from_checkpoint(checkpoint: Dict) -> FTTransformer:
     """Construct FTTransformer using saved hyperparameters when available."""
@@ -57,7 +57,6 @@ for pos in positions:
     loaded += 1
 
 print(f"Loaded models for {loaded} positions")
-
 
 def _encode_categorical_value(le, val: str) -> int:
     """Encode a categorical value with a LabelEncoder, mapping unknowns to 0.
