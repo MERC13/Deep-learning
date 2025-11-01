@@ -1,221 +1,186 @@
 # Fantasy Football Deep Learning Extension
 
-A comprehensive fantasy football prediction system using FT-Transformer deep learning models with Next Gen Stats data.
+Transformer-powered fantasy football predictions with cleaned NFL data and a Chrome/Edge extension overlay.
 
-## 🎯 Overview
+## Overview
 
-This project predicts fantasy football player performance (PPR scoring) using:
-- **Next Gen Stats (NGS)** tracking data (receiving, rushing, passing metrics)
-- **Game context** (Vegas lines, weather, injuries, snap counts)
-- Optional engineered features (rolling averages, opponent strength, player trends)
-- **FT-Transformer** neural network architecture for tabular data
+This repo contains:
+- FT-Transformer/Temporal Transformer models for tabular/sequential NFL data (QB/RB/WR/TE)
+- A Flask API that serves predictions from saved checkpoints
+- A Chrome/Edge extension that overlays predictions on fantasy sites
+- Data collection and preprocessing scripts (feature engineering optional)
 
-## 📊 Features
+Pretrained checkpoints for each position are included under `models/` so you can get predictions without training.
+
+## Features
 
 - Position-specific models (QB, RB, WR, TE)
-- Comprehensive feature engineering pipeline
-- Time-series aware train/validation/test splits
-- Hyperparameter optimization with Optuna
-- Browser extension for real-time predictions
+- Time-aware splits and robust preprocessing (scaling + label encoding)
+- Sequence-aware inference for players using prior-week history when available
+- API endpoints for single-player and weekly-batch predictions
+- Browser extension injection on Yahoo and ESPN (experimental Sleeper support)
 
-## 🏗️ Project Structure
+## Project structure
 
 ```
 fantasy-football-extension/
-├── api/                          # Flask API for predictions
-│   └── app.py
-├── data/                         # Data storage
-│   ├── raw/                      # Raw NFL data (parquet files)
-│   └── processed/                # Cleaned and featured data
-├── preprocessing/                # Data pipeline
-│   └── clean_data.py            # Merge and clean raw data (no engineered features)
-├── models/                       # Model training
-│   ├── ft_transformer.py        # FT-Transformer architecture
-│   └── train_position.py        # Training script
-├── extension/                    # Browser extension
-│   ├── manifest.json
-│   ├── background.js
-│   ├── content.js
-│   └── styles.css
-└── requirements.txt
+├─ api/                         # Flask API for predictions
+│  └─ app.py                    # /predict, /predictions/weekly, /health
+├─ data/
+│  ├─ collect_data.py          # Download raw data from sources
+│  ├─ export_heads.py          # Export schema/head samples
+│  ├─ heads/                   # Small CSV heads and schemas
+│  ├─ raw/                     # Raw data (parquet/csv)
+│  └─ processed/               # Cleaned parquet used by the API
+├─ preprocessing/
+│  ├─ clean_data.py            # Clean/merge into processed parquet files
+│  └─ engineer_features.py     # Optional feature engineering (disabled by default)
+├─ models/
+│  ├─ ft_transformer.py        # FT-Transformer (tabular)
+│  ├─ temporal_transformer.py  # Transformer for sequences
+│  ├─ train_position.py        # Train script (per-position)
+│  ├─ *_transformer_complete.pt# Checkpoints with model+preprocessing artifacts
+│  └─ best_model_*.pt          # Optional best snapshots
+└─ extension/
+     ├─ manifest.json            # MV3 manifest
+     ├─ background.js            # Fetch + cache weekly predictions
+     ├─ content.js               # Inject badges on supported sites
+     └─ styles.css               # UI styles for injected elements
 ```
 
-## 🚀 Getting Started
+## Quick start (Windows / PowerShell)
 
-### Prerequisites
+The following uses the provided pretrained models.
 
-- Python 3.10+
-- NVIDIA GPU with CUDA support (optional, but recommended)
-- 8GB+ RAM
-- ~5GB disk space for data
+1) Create and activate a virtual env
 
-### Installation
-
-1. **Clone the repository**
-```bash
-git clone https://github.com/MERC13/Deep-learning.git
-cd fantasy-football-extension
-```
-
-2. **Create virtual environment**
-```bash
+```powershell
 python -m venv .venv
-.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # Linux/Mac
+.\.venv\Scripts\Activate.ps1
 ```
 
-3. **Install dependencies**
-```bash
+2) Install dependencies
+
+```powershell
 pip install -r requirements.txt
 ```
 
-### Data Collection
+3) Prepare processed data (required by API)
 
-```bash
-python data/collect_data.py
-```
-
-This downloads NFL data for seasons 2019-2024:
-- Weekly player statistics
-- Next Gen Stats (receiving, rushing, passing)
-- Snap counts, injuries, Vegas lines
-
-### Data Preprocessing
-
-```bash
-# Clean and merge data (feature engineering disabled)
+```powershell
 python preprocessing/clean_data.py
 ```
 
-### Model Training
+4) Start the API (default: http://127.0.0.1:5000)
 
-```bash
-python models/train_position.py
-```
-
-This trains models for all positions (QB, RB, WR, TE). Each model:
-- Uses seasons 2019-2022 for training
-- Season 2023 for validation
-- Season 2024 for testing
-
-**Training time:**
-- GPU: ~10-15 minutes per position
-- CPU: ~45-60 minutes per position
-
-### API Server
-
-```bash
+```powershell
 python api/app.py
 ```
 
-Server runs on `http://localhost:5000`
+5) Load the extension in Chrome/Edge
 
-## 📈 Model Performance
+- Navigate to chrome://extensions (or edge://extensions)
+- Toggle Developer mode
+- Load unpacked and select the `extension/` folder
 
-Expected performance metrics (2024 season):
+6) Visit Yahoo or ESPN fantasy pages. The overlay should display predicted points next to player names.
 
-| Position | MAE (PPR) | RMSE | R² |
-|----------|-----------|------|-----|
-| QB | ~4-5 | ~6-7 | 0.60-0.70 |
-| RB | ~5-6 | ~7-8 | 0.55-0.65 |
-| WR | ~4-5 | ~6-7 | 0.50-0.60 |
-| TE | ~3-4 | ~5-6 | 0.45-0.55 |
+Tip: The extension fetches weekly predictions from the API automatically and caches them.
 
-## 🎨 Browser Extension
+## API usage
 
-### Installation
+Base URL: `http://127.0.0.1:5000`
 
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select the `extension/` folder
+- GET `/health`
+    - Returns status, device (cpu/cuda), and loaded positions.
 
-### Usage
+- POST `/predict`
+    - Predict a single player. If the model is sequence-based and you do not pass `history`, the API will derive prior weeks from processed data.
+    - Body (example):
 
-Navigate to fantasy football websites (ESPN, Yahoo, Sleeper, etc.) and the extension will automatically:
-- Detect players on the page
-- Display predicted fantasy points
-- Show confidence intervals
-
-## 🔧 Configuration
-
-### Hyperparameters (default)
-
-```python
+```json
 {
-    'd_token': 192,        # Token dimension
-    'n_layers': 3,         # Number of transformer layers
-    'n_heads': 8,          # Attention heads
-    'dropout': 0.15,       # Dropout rate
-    'lr': 1e-4,            # Learning rate
-    'batch_size': 128      # Batch size
+    "player_name": "Patrick Mahomes",
+    "position": "QB",
+    "week": 8,
+    "season": 2025,
+    "features": {},
+    "history": [
+        { "time_to_throw": 2.6, "recent_team": "KC", "opponent_team": "LAC", "season": 2025, "week": 6 }
+    ]
 }
 ```
 
-To enable hyperparameter optimization, uncomment in `train_position.py`:
+- GET `/predictions/weekly?week=<int>&season=<int>`
+    - Returns predictions for all relevant players for the given week.
+    - Note: The current implementation internally uses the previous season for this route. Passing `season=2025` will operate on 2024 data if that’s what’s available.
+
+## Data pipeline
+
+1) Collect data (optional if you already have raw data)
+
+```powershell
+python data/collect_data.py
+```
+
+2) Clean/merge to produce processed parquet used by the API
+
+```powershell
+python preprocessing/clean_data.py
+```
+
+Optional: feature engineering is available via `preprocessing/engineer_features.py` but is disabled by default in training/inference.
+
+## Training (optional)
+
+If you want to retrain the models:
+
+```powershell
+python models/train_position.py
+```
+
+Default training uses historical splits (train/val/test by season). Hyperparameters in code (typical defaults):
+
 ```python
-best_params = hyperparameter_optimization(data_dict, position, n_trials=20)
+{
+    'd_token': 192,
+    'n_layers': 3,
+    'n_heads': 8,
+    'dropout': 0.15,
+    'lr': 1e-4,
+    'batch_size': 128
+}
 ```
 
-## 📊 Features Used
+Hyperparameter search (Optuna) is available in the script (commented by default).
 
-With feature engineering disabled, training and inference use columns available from the cleaned merges:
+## Browser extension
 
-### Continuous features
-- NGS Receiving: cushion, separation, intended air yards, YAC, catch % (plus counts like targets/receptions when present)
-- NGS Rushing: efficiency, time to LOS, rush yards over expected, attempts/yards/TDs
-- NGS Passing: time to throw, completed/intended air yards, air distance, attempts/yards/TDs/INTs, passer rating
-- Workload: offensive snaps and snap percentage
-- Weather (if present): temperature, wind
+- Supports Yahoo and ESPN content injection out of the box. Sleeper selectors are included but considered experimental.
+- Requires the local API running at `http://127.0.0.1:5000` (or `http://localhost:5000`).
+- The background worker refreshes predictions daily and on browser start.
 
-### Categorical features
-- Teams: recent_team, opponent_team, depth_team
-- Position
-- Injury status fields: report_status, practice_status, report_primary_injury
+## Requirements
 
-## 🛠️ Development
+See `requirements.txt`. PyTorch wheels are configured for CUDA 12.6 via the extra index; CPU-only installs are also supported (PyTorch will fall back to CPU if CUDA isn’t available).
 
-### Running Tests
-```bash
-pytest tests/
-```
+## Troubleshooting
 
-### Code Style
-```bash
-black .
-flake8 .
-```
+- API won’t start: ensure `preprocessing/clean_data.py` has produced files under `data/processed/` (e.g., `QB_data.parquet`).
+- Extension shows no badges: verify `/predictions/weekly` returns data, and that you’re on a supported site (Yahoo/ESPN). Try the “Refresh predictions” path by reloading the page.
+- CUDA errors: install a CUDA-compatible PyTorch build or run on CPU; the API will auto-select CPU if CUDA is unavailable.
+- Port conflicts: change the port in `api/app.py` (last line) and update `extension/background.js` `API_URL` accordingly.
 
-## 📝 Data Sources
+## Acknowledgments
 
-- **nfl_data_py:** Official NFL data API
-- **Next Gen Stats:** AWS-powered player tracking
-- **Vegas Lines:** Betting odds and totals
-- **Injury Reports:** Official NFL injury reports
+- nfl_data_py (NFL data access)
+- FT-Transformer (Gorishniy et al.) and rtdl library
+- NFL Next Gen Stats (AWS player tracking)
 
-## 🤝 Contributing
+## License
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+MIT
 
-## 📄 License
+—
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **nfl_data_py** for comprehensive NFL data access
-- **FT-Transformer** paper by Yury Gorishniy et al.
-- **rtdl** library for transformer implementations
-- NFL Next Gen Stats powered by AWS
-
-## 📧 Contact
-
-Project Link: [https://github.com/MERC13/Deep-learning](https://github.com/MERC13/Deep-learning)
-
----
-
-**Note:** This project is for educational and research purposes. Always verify predictions with your own analysis before making fantasy football decisions.
+This project is for educational and research purposes. Always verify predictions with your own analysis before making fantasy decisions.
