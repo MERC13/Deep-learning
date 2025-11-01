@@ -1,17 +1,14 @@
 # Research Assistant
 
-Ingest, parse, embed, and summarize research PDFs into an email-ready digest. Uses Ollama (local LLM) for summaries, Pinecone for vector retrieval, and SendGrid for email.
+Ingest, parse, embed, and summarize research PDFs into an email-ready digest. The pipeline can run locally (console output) or as a container in a scheduled environment. Typical stack: local Ollama for summaries, Pinecone for vector retrieval, SendGrid for email delivery.
 
 Large data artifacts live under `data/` and are git-ignored by default.
 
 ## Features
 
 - PDF parsing and chunking (PyMuPDF)
-- Embedding and vector store upsert (Sentence-Transformers + Pinecone)
-- Retrieval by semantic query
-- LLM-powered summaries via Ollama:
-	- Overall literature overview
-	- Per-paper bullet summaries
+- Embedding and vector-store upsert (sentence-transformers + Pinecone)
+- Semantic retrieval and LLM-powered summaries
 - Email digest delivery (SendGrid)
 
 ## Repo structure
@@ -26,7 +23,7 @@ Large data artifacts live under `data/` and are git-ignored by default.
 - `data/raw_pdfs/` – PDFs and parsed JSON metadata (ignored)
 - `data/chunks/` – preprocessed text chunks (ignored)
 
-## Quick start
+## Quick start (local, PowerShell)
 
 ```powershell
 # 1) Create and activate a virtual environment
@@ -38,68 +35,47 @@ pip install -r requirements.txt
 # 3) Copy env sample and edit as needed
 Copy-Item .env_sample .env
 
-# 4) Start Ollama (https://ollama.com/) and pull a model, e.g.
-#   ollama pull llama3.1:8b-instruct
+# 4) (Optional) Start Ollama and pull a model, e.g.
+# ollama pull llama3.1:8b-instruct
 
 # 5) Print a digest to console (no email)
 $env:PYTHONPATH = 'src'
 python -m tools.print_digest
 ```
 
-## Running the pipeline
+## Running the full pipeline
+
+From the repo root (PowerShell):
 
 ```powershell
-cd src
+cd Agents/research-assistant/src
 python -m pipeline.run_all
 ```
 
-## Containerize and run weekly on AWS (ECS Fargate)
+## Containerization & scheduling (high level)
 
-This repo includes a Dockerfile for running the weekly assistant as a container. High-level steps:
-
-1) Build and push the image
+Build the container from the repo root and push to your registry, then run on ECS/Fargate or another scheduler. Example build (PowerShell):
 
 ```powershell
 # from repo root
-docker build -t research-assistant:local .
-# Optionally tag for ECR: <acct>.dkr.ecr.<region>.amazonaws.com/research-assistant:latest
+docker build -t research-assistant:local -f Agents/research-assistant/Dockerfile .
+# tag & push to your registry as needed
 ```
 
-2) Create an ECR repository and push the image (AWS Console or AWS CLI)
+When creating a task definition, provide required secrets (SendGrid/Pinecone keys) via Secrets Manager or your cloud provider's secret store. Consider mounting persistent storage if you need to retain downloads or outputs.
 
-3) Create an ECS task definition (Fargate)
-- CPU/memory: e.g., 1 vCPU / 2GB
-- Command: default from image (python -m pipeline.run_all)
-- Working dir: /app
-- Environment variables: see `.env.sample` for required/optional vars
-- Mount ephemeral storage for data: add an ephemeral volume mounted at `/data` (or leave as default 20GB)
-- Networking: public subnet with outgoing internet access (NAT/IGW) so it can fetch PDFs and call Pinecone/SendGrid
-- Secrets: store `SENDGRID_API_KEY` (and `PINECONE_API_KEY`) in AWS Secrets Manager and reference them in the task definition
+## Notes & troubleshooting
 
-4) Schedule weekly runs
-- Use EventBridge (CloudWatch) schedule to trigger the ECS task (e.g., cron(0 13 ? * MON *))
-- Target: your ECS cluster and the task definition revision
-- Configure retry policy and dead-letter queue (optional)
-
-Notes
-- The image sets `PYTHONPATH=/app/src` and defaults `DIGEST_USE_LLM=false` to avoid needing an Ollama server. Enable LLM if you run an accessible Ollama endpoint.
-- Outputs are ephemeral unless you back them up; consider mounting an EFS volume to `/data` for persistence across runs.
-- Set `DRY_RUN=false` to actually send emails; with `true`, it logs only.
-
+- The container defaults `DIGEST_USE_LLM=false` to avoid requiring Ollama for CI runs. Enable LLMs if you have an accessible Ollama endpoint.
+- Ollama connection errors: verify `http://localhost:11434` is reachable and the model is present (`ollama pull <model>`).
+- If digest output is empty: ensure raw PDFs and metadata exist in `data/raw_pdfs/`.
 
 ## Development
 
-Formatting, linting, and tests:
+Run tests with pytest (from repo root or the project folder):
 
 ```powershell
-# Run tests
 pytest
 ```
 
-Configurations are in `pyproject.toml` (ruff, black, pytest) and `.editorconfig`.
-
-## Troubleshooting
-
-- Import warnings in editor: ensure your venv is activated and dependencies installed.
-- Ollama connection errors: verify the server is running (`http://localhost:11434`) and the model exists (`ollama pull <model>`).
-- No metadata in digest: ensure corresponding `<stem>.json` exists in `data/raw_pdfs/` for each chunk.
+Configurations (ruff, black, pytest) are in `pyproject.toml`.

@@ -6,11 +6,17 @@ After 3 epochs of 326 images:
 
 ![image](https://github.com/user-attachments/assets/1aaceac2-2c8c-4820-8faf-0e76db43354c)
 
-## Setup
+## Setup (PowerShell)
 
 ```powershell
 python -m venv .venv; . .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+```
+
+If activation fails due to execution policy restrictions, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 ## Data

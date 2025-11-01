@@ -8,12 +8,19 @@ Stock price forecasting pipeline plus a simple Flask app to serve predictions an
 - `app.py`: Flask app exposing `/` and `/predict`
 - `dataprocessing.py`: feature engineering and dataset prep
 
-## Setup
+## Setup (PowerShell)
+
+Create and activate a virtual environment and install dependencies:
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
+python -m venv .venv; . .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+```
+
+If activation fails due to execution policy, enable it for the current process:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 ## Train
@@ -22,16 +29,20 @@ pip install -r requirements.txt
 python train.py
 ```
 
-## Serve
+## Serve (PowerShell)
+
+Run the Flask app (the server listens on port 5001 by default):
 
 ```powershell
-$env:FLASK_APP = "app.py"; python app.py
+$env:FLASK_APP = 'app.py'; python app.py
 ```
 
-App runs on http://localhost:5001
+Open http://localhost:5001 in your browser.
 
-## MISC
-Use to oerwrite the model
-```
+## Misc
+
+Force retraining / overwrite the model for a run (PowerShell):
+
+```powershell
 $env:FORCE_NEW_MODEL = '1'
 ```

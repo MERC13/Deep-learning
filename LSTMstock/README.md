@@ -2,11 +2,17 @@
 
 Keras LSTM model for single-ticker forecasting using yfinance. Includes a Dockerfile.
 
-## Setup
+## Setup (PowerShell)
 
 ```powershell
 python -m venv .venv; . .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+```
+
+If activation fails, temporarily relax PowerShell execution policy for the session:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 ## Run locally

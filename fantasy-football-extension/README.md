@@ -52,11 +52,16 @@ fantasy-football-extension/
 
 The following uses the provided pretrained models.
 
-1) Create and activate a virtual env
+1) Create and activate a virtual env (PowerShell)
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+python -m venv .venv; . .venv\Scripts\Activate.ps1
+```
+
+If activation is blocked, allow it for the current session:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 2) Install dependencies
@@ -176,11 +181,3 @@ See `requirements.txt`. PyTorch wheels are configured for CUDA 12.6 via the extr
 - nfl_data_py (NFL data access)
 - FT-Transformer (Gorishniy et al.) and rtdl library
 - NFL Next Gen Stats (AWS player tracking)
-
-## License
-
-MIT
-
-—
-
-This project is for educational and research purposes. Always verify predictions with your own analysis before making fantasy decisions.

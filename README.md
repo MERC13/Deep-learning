@@ -1,37 +1,49 @@
 # Deep-learning
 
-A collection of machine learning and deep learning experiments and mini-projects. Each subfolder is self-contained. This README gives a quick map and how to run each project.
+A collection of machine learning and deep learning experiments and mini-projects. Each subfolder is intended to be self-contained. This top-level README gives a short map, quick setup hints, and links to subproject READMEs.
 
-## Projects
+## Quick project map
 
-- GAN test: PyTorch GAN on CIFAR-10. Trains a simple generator/discriminator and saves samples and weights.
-- gymtest: Q-learning on CartPole-v1 using Gym. Renders to a window.
-- LSTMstock: LSTM forecasting using TensorFlow/Keras and yfinance. Includes a Dockerfile.
-- Rankings Predictor: Keras model predicting team win counts from tournament pairings.
-- research-assistant: Data ingestion/parsing utilities and artifacts (docs WIP).
-- stockproject: Stock prediction training pipeline plus a simple Flask app to serve predictions.
-- X-ray CNN: Transfer-learning with VGG16 for pneumonia detection from chest X-rays.
-- Atari RL: Deep Q-learning to train on Atari games, using ALE library.
+- `Agents/` — small agent examples and a research-assistant pipeline (LangChain, LangGraph, AutoGen demos).
+- `atariRL/` — Deep Q-Network training for Atari games (PyTorch + Gymnasium).
+- `fantasy-football-extension/` — transformer models + Flask API and browser extension for fantasy football overlays.
+- `GAN test/` — PyTorch GAN (CIFAR-10).
+- `GPT2/` — small GPT-2 experiments and text generation examples.
+- `gymtest/` — simple RL / Q-learning demos (CartPole examples).
+- `learning-LLM/` — small utilities and experiments for LLM fine-tuning / LoRA.
+- `LSTMstock/` — LSTM forecasting (TensorFlow/Keras).
+- `Rankings Predictor/` — Keras model for tournament ranking prediction.
+- `research-assistant/` — PDF ingestion → embeddings → LLM summarization pipeline.
+- `SNN/` — spiking neural network experiments.
+- `stockproject/` — training pipeline + small Flask app for stock predictions.
+- `X-ray CNN/` — transfer learning (VGG16) for chest X-ray classification.
 
-## Setup
+For more details, open the `README.md` inside each project folder.
 
-Use a separate virtual environment per project. Python 3.10 recommended where possible.
+## Recommended setup
 
-```bash
-# Windows PowerShell
-python -m venv .venv; . .venv/Scripts/Activate.ps1
+Use a separate virtual environment per project. Python 3.10+ is recommended for most folders. From PowerShell (example):
+
+```powershell
+# create and activate a venv
+python -m venv .venv; . .venv\Scripts\Activate.ps1
+
+# install the project's dependencies
 pip install -r <project>/requirements.txt
 ```
 
-See each project's README for specific steps.
+Replace `<project>` with the folder name (for example, `atariRL` or `Agents/LangChainAgents`). Some projects require extra system packages (CUDA, ffmpeg, etc.) — see the project README.
 
-## Conventions
+## Contributing
 
-- Code style: 4-space indentation, LF line endings (see .editorconfig)
-- Artifacts: data/, logs/, and model files are git-ignored by default
-- Repro: Each project has a requirements.txt with minimal dependencies
+- File issues for bugs or feature requests.
+- When submitting PRs: keep changes limited to one project when possible and include a short test or example demonstrating the change.
+- Follow the existing code style (4-space indent). Run linters/tests in the subproject if present.
 
-## Notes
+## Data and artifacts
 
-- Large datasets and trained weights are ignored; you may need to re-download or retrain.
-- GPU-accelerated packages (TensorFlow/PyTorch) may require platform-specific installs; adjust versions if needed.
+Large datasets, logs, and model weights are intentionally git-ignored. Check each project's `.gitignore` and `data/` or `saved_models/` directories for expected artifact locations. If a project requires external downloads, the project README will usually include links or scripts.
+
+## Contact / Questions
+
+If something is unclear, open an issue with the project name and a short reproduction step. Maintainers will triage according to available context.

@@ -33,26 +33,33 @@ atariRL/
 
 1. **Clone or download the project**
 
-**(Optional) Download CUDA**  
-Refer to the [CUDA Quick Start Guide](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html) for installation instructions. After downloading CUDA, import using ```pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126```
+2. **(Optional) Install CUDA**
 
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+If you plan to use GPU acceleration, install the appropriate CUDA toolkit and then install PyTorch with the matching CUDA wheel. Refer to the CUDA Quick Start Guide for instructions. Example (select the correct wheel for your CUDA version):
 
-   Or install manually:
-   ```bash
-   pip install torch torchvision gymnasium[atari] ale-py numpy opencv-python matplotlib Pillow
-   ```
+```powershell
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+```
+
+3. **Install dependencies** (PowerShell):
+
+```powershell
+pip install -r requirements.txt
+```
+
+Or install core dependencies manually:
+
+```powershell
+pip install torch torchvision gymnasium[atari] ale-py numpy opencv-python matplotlib Pillow
+```
 
 ## Usage
 
 ### Training
 
-Train a DQN agent on Atari Breakout:
+Train a DQN agent on Atari Breakout (PowerShell):
 
-```bash
+```powershell
 python main.py
 ```
 
@@ -61,36 +68,36 @@ The training script will:
 - Train for the specified number of episodes
 - Save models periodically during training
 - Generate training plots and metrics
-- Evaluate the final trained model
+- Optionally evaluate the trained model
 
 ### Configuration
 
-Modify training parameters in `configs/config.py`:
+Modify training parameters in `configs/config.py`. Example excerpt:
 
 ```python
 @dataclasses.dataclass
 class DQNConfig:
-    # Environment settings
-    env_name: str = 'ALE/Breakout-v5'
-    
-    # Training hyperparameters
-    learning_rate: float = 1e-4
-    gamma: float = 0.99
-    epsilon_start: float = 1.0
-    epsilon_end: float = 0.01
-    epsilon_decay: int = 1000000
-    
-    # Training settings
-    n_episodes: int = 2000
-    batch_size: int = 32
-    # ... more parameters
+  # Environment settings
+  env_name: str = 'ALE/Breakout-v5'
+
+  # Training hyperparameters
+  learning_rate: float = 1e-4
+  gamma: float = 0.99
+  epsilon_start: float = 1.0
+  epsilon_end: float = 0.01
+  epsilon_decay: int = 1000000
+
+  # Training settings
+  n_episodes: int = 2000
+  batch_size: int = 32
+  # ... more parameters
 ```
 
 ### Evaluation
 
-Evaluate a trained model:
+Evaluate a trained model (PowerShell):
 
-```bash
+```powershell
 # Basic evaluation (10 episodes, no rendering)
 python evaluate.py saved_models/dqn_ALE_Breakout-v5_final.pth
 

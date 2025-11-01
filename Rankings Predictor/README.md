@@ -9,11 +9,17 @@ Predicts team win counts from tournament pairings using a Keras LSTM.
 
 See `data.py` for example structures.
 
-## Setup
+## Setup (PowerShell)
 
 ```powershell
 python -m venv .venv; . .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+```
+
+If activation fails due to execution policy, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 ## Train / run

@@ -1,46 +1,54 @@
 # Agents
 
-A grab‑bag of small agentic AI examples and a fuller research assistant pipeline. Each subfolder is self‑contained—pick what matches the pattern you want to explore.
+A set of agent-focused examples and a research-assistant pipeline. Each subfolder is intended to be run independently; pick the example that matches what you want to explore.
 
 ## Contents
 
-| Subfolder | Focus | Stack Highlights |
+| Subfolder | Focus | Stack highlights |
 |-----------|-------|------------------|
-| `AutogenAgents/` | Lightweight multi‑agent chat with tool (agent-as-tool) chaining | Microsoft AutoGen (agentchat), local Ollama models |
-| `LangChainAgents/` | Assorted LangChain / LangGraph patterns (ReAct, LangGraph state machine, RAG, multimodal) | LangChain, LangGraph, Groq / Ollama, Tavily search |
-| `research-assistant/` | End‑to‑end PDF ingestion → embedding → retrieval → LLM summarization → email digest | PyMuPDF, Sentence-Transformers, Pinecone, Ollama, SendGrid |
+| `AutogenAgents/` | Lightweight multi-agent chat with tool chaining | Microsoft AutoGen, local Ollama models |
+| `LangChainAgents/` | LangChain / LangGraph patterns (ReAct, RAG, multimodal) | LangChain, LangGraph, Groq/Ollama |
+| `research-assistant/` | End-to-end PDF ingestion → embedding → summarization → email digest | PyMuPDF, sentence-transformers, Pinecone, Ollama, SendGrid |
 
-## Quick Start (Pick One)
+## Quick start (pick one)
 
-### 1. Autogen basic multi‑agent demo
-```
+### 1) Autogen basic multi-agent demo
+
+From PowerShell:
+
+```powershell
 cd Agents/AutogenAgents
-python -m venv .venv && .venv\Scripts\activate
+python -m venv .venv; . .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-# Ensure Ollama is running locally with `ollama pull llama3.2`
+# Ensure Ollama is running locally (if used): ollama pull <model>
 python basic.py
 ```
 
-### 2. LangChain / LangGraph examples
-```
+### 2) LangChain / LangGraph examples
+
+From PowerShell:
+
+```powershell
 cd Agents/LangChainAgents
-python -m venv .venv && .venv\Scripts\activate
+python -m venv .venv; . .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-# Set needed API keys (GROQ_API_KEY, TAVILY_API_KEY, etc.)
+# Set API keys in env vars or .env (see LangChainAgents/README.md)
 python main.py               # ReAct agent
 python langgraph.py          # Minimal LangGraph
 python rag_example.py        # Simple RAG
-python multimodal_example.py # Vision + text prompt
+python multimodal_example.py # Vision + text example
 ```
 
-### 3. Research Assistant pipeline
-See the detailed `research-assistant/README.md` for full instructions (env vars, Docker, scheduling). Minimal local run:
-```
+### 3) Research Assistant pipeline
+
+See `Agents/research-assistant/README.md` for full instructions. Minimal local run:
+
+```powershell
 cd Agents/research-assistant
-python -m venv .venv && .venv\Scripts\activate
+python -m venv .venv; . .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env_sample .env  # then edit keys
-# Start Ollama & pull a model if using LLM summaries
+Copy-Item .env_sample .env  # then edit keys in .env
+# Start Ollama & pull a model if using LLM summaries (optional)
 $env:PYTHONPATH = 'src'
 python -m tools.print_digest
 ```

@@ -1,6 +1,6 @@
 # LangChainAgents
 
-A small collection of LangChain/LangGraph examples:
+A small collection of LangChain / LangGraph examples:
 
 - ReAct agent with tools and memory (`main.py`)
 - Minimal LangGraph agent (`langgraph.py`)
@@ -13,20 +13,19 @@ These scripts are meant to be run independently and demonstrate focused patterns
 
 - Python 3.10+ recommended
 - API keys (set via environment variables or a local `.env` file):
-  - `GROQ_API_KEY` (for Groq-hosted LLMs in `main.py`, `rag_example.py`, `multimodal_example.py`)
-  - `TAVILY_API_KEY` (for web search tool in `main.py`)
-  - `LANGSMITH_API_KEY` (optional; for tracing/observability if you use LangSmith)
-  - `ANTHROPIC_API_KEY` (only if you change/use Anthropic models as in `langgraph.py`)
-  - `USER_AGENT` (used by `rag_example.py` to fetch web pages politely)
+  - `GROQ_API_KEY` (Groq-hosted LLMs used by some examples)
+  - `TAVILY_API_KEY` (optional; for web search tool)
+  - `LANGSMITH_API_KEY` (optional; observability/tracing)
+  - `ANTHROPIC_API_KEY` (only if you swap in Anthropic models)
+  - `USER_AGENT` (used by `rag_example.py` when fetching web pages)
 
 ## Install
 
-From this folder, install Python dependencies:
+From this folder, install Python dependencies (PowerShell):
 
 ```powershell
-# From Windows PowerShell
-cd "c:\Users\jonah\Code\Machine Learning\Deep learning\Agents\LangChainAgents"
-python -m venv .venv ; .\.venv\Scripts\Activate.ps1
+cd Agents/LangChainAgents
+python -m venv .venv; . .venv\Scripts\Activate.ps1
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
