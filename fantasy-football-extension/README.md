@@ -2,6 +2,9 @@
 
 Transformer-powered fantasy football predictions with cleaned NFL data and a Chrome/Edge extension overlay.
 
+## Note to self
+Next steps: real-time prediction, expert opinions, more data, relative value
+
 ## Overview
 
 This repo contains:
