@@ -362,7 +362,7 @@ def train_model(model, train_loader, val_loader, position='model', epochs=50, lr
             patience_counter = 0
         else:
             patience_counter += 1
-            if patience_counter >= 10:
+            if patience_counter >= 15:
                 print(f"\nEarly stopping at epoch {epoch} (patience exceeded)")
                 break
         
