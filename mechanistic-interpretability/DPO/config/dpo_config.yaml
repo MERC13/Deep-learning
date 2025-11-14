@@ -1,0 +1,64 @@
+# DPO Training Configuration
+
+# Model Configuration
+model:
+  name: "gpt2"  # Options: gpt2, gpt2-medium, meta-llama/Llama-2-7b-hf, mistralai/Mistral-7B-v0.1
+  use_peft: true  # Use LoRA for efficient fine-tuning
+  load_in_8bit: false  # For larger models
+  load_in_4bit: false
+
+# LoRA Configuration (if use_peft is true)
+lora:
+  r: 16  # Rank of the LoRA matrices
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: ["c_attn"]  # For GPT-2. For LLaMA: ["q_proj", "v_proj"]
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# Dataset Configuration
+dataset:
+  name: "Anthropic/hh-rlhf"  # Hugging Face dataset name
+  # OR use local path:
+  # path: "data/preference_data.json"
+  train_split: "train"
+  eval_split: "test"
+  max_length: 512  # Maximum sequence length
+  max_prompt_length: 256
+
+# DPO Training Parameters
+training:
+  beta: 0.1  # DPO temperature parameter (controls strength of KL penalty)
+  learning_rate: 5.0e-5
+  num_train_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 4
+  warmup_steps: 100
+  logging_steps: 10
+  eval_steps: 500
+  save_steps: 1000
+  save_total_limit: 3
+  fp16: true  # Use mixed precision training
+  bf16: false  # Use bfloat16 (if supported)
+  gradient_checkpointing: true  # Save memory
+
+# Evaluation Configuration
+evaluation:
+  max_samples: 100  # Number of samples to evaluate
+  generate_samples: true  # Generate sample responses during evaluation
+  num_samples_to_generate: 5
+
+# Output Configuration
+output:
+  output_dir: "outputs/dpo_model"
+  logging_dir: "outputs/logs"
+  
+# Weights & Biases Configuration
+wandb:
+  enabled: true
+  project: "dpo-alignment"
+  run_name: "dpo-gpt2-hh-rlhf"
+  
+# Reproducibility
+seed: 42
