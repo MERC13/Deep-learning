@@ -68,6 +68,8 @@ class DPOTrainerWrapper:
             
             # DPO specific
             beta=self.training_config.get('beta', 0.1),  # Temperature parameter
+            max_length=self.config.get('dataset', {}).get('max_length', 512),
+            max_prompt_length=self.config.get('dataset', {}).get('max_prompt_length', 256),
             
             # W&B
             report_to="wandb" if self.wandb_config.get('enabled', False) else "none",
@@ -94,9 +96,7 @@ class DPOTrainerWrapper:
             args=training_args,
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
-            tokenizer=self.tokenizer,
-            max_length=self.config.get('dataset', {}).get('max_length', 512),
-            max_prompt_length=self.config.get('dataset', {}).get('max_prompt_length', 256),
+            processing_class=self.tokenizer,
         )
         
         return trainer

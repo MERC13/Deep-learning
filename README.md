@@ -1,49 +1,74 @@
-# Deep-learning
+# Deep Learning & AI Portfolio
 
-A collection of machine learning and deep learning experiments and mini-projects. Each subfolder is intended to be self-contained. This top-level README gives a short map, quick setup hints, and links to subproject READMEs.
+A collection of machine learning, deep learning, and AI engineering projects, ranging from LLM safety research to reinforcement learning and full-stack AI applications.
 
-## Quick project map
+## 🏆 Featured Projects
 
-- `Agents/` — small agent examples and a research-assistant pipeline (LangChain, LangGraph, AutoGen demos).
-- `atariRL/` — Deep Q-Network training for Atari games (PyTorch + Gymnasium).
-- `fantasy-football-extension/` — transformer models + Flask API and browser extension for fantasy football overlays.
-- `GAN test/` — PyTorch GAN (CIFAR-10).
-- `GPT2/` — small GPT-2 experiments and text generation examples.
-- `gymtest/` — simple RL / Q-learning demos (CartPole examples).
-- `learning-LLM/` — small utilities and experiments for LLM fine-tuning / LoRA.
-- `LSTMstock/` — LSTM forecasting (TensorFlow/Keras).
-- `Rankings Predictor/` — Keras model for tournament ranking prediction.
-- `research-assistant/` — PDF ingestion → embeddings → LLM summarization pipeline.
-- `SNN/` — spiking neural network experiments.
-- `stockproject/` — training pipeline + small Flask app for stock predictions.
-- `X-ray CNN/` — transfer learning (VGG16) for chest X-ray classification.
+### 1. [Fantasy Football Extension](fantasy-football-extension/)
+**Stack:** Python, Flask, Transformers, Chrome Extension
+Transformer-powered fantasy football predictions with a browser extension overlay.
+- **Key Features:** Position-specific Transformer models, real-time API, Chrome/Edge extension for Yahoo/ESPN.
+- **Tech:** FT-Transformer, Temporal Transformer, Flask, JavaScript.
 
-For more details, open the `README.md` inside each project folder.
+### 2. [AI Agents & Pipelines](agents/)
+**Stack:** LangChain, LangGraph, AutoGen
+A collection of agentic workflows and a research assistant pipeline.
+- **Key Features:** Multi-agent chat (AutoGen), ReAct/RAG patterns (LangChain), and an end-to-end PDF research assistant.
+- **Demos:** Automated research summaries, tool-using agents.
 
-## Recommended setup
+### 3. [Atari Reinforcement Learning](rl-atari/)
+**Stack:** PyTorch, Gymnasium
+Implementation of Deep Q-Networks (DQN) to master Atari games.
+- **Key Features:** Experience replay, target networks, frame stacking.
+- **Performance:** Beats human baseline on Breakout and Pong.
 
-Use a separate virtual environment per project. Python 3.10+ is recommended for most folders. From PowerShell (example):
+---
 
-```powershell
-# create and activate a venv
-python -m venv .venv; . .venv\Scripts\Activate.ps1
+## 📂 Project Index
 
-# install the project's dependencies
-pip install -r <project>/requirements.txt
-```
+| Project | Description | Tech Stack |
+|---------|-------------|------------|
+| **[Agents](agents/)** | LangChain & AutoGen demos, research assistant pipeline. | LangChain, AutoGen |
+| **[CNN X-Ray](cnn-xray/)** | Chest X-ray classification using Transfer Learning (VGG16). | PyTorch/Keras, CNN |
+| **[Fantasy Football](fantasy-football-extension/)** | Browser extension & API for fantasy football overlays. | Flask, JS, Transformers |
+| **[GAN Test](gan-test/)** | Generative Adversarial Network experiments on CIFAR-10. | PyTorch, GAN |
+| **[GPT-2 Experiments](gpt2/)** | Text generation and fine-tuning experiments. | Transformers, PyTorch |
+| **[Gym Test](gym-test/)** | Simple RL algorithms (Q-learning) on CartPole. | Gymnasium, RL |
+| **[Learning LLM](learning-llm/)** | Utilities for LLM fine-tuning and LoRA. | PEFT, Transformers |
+| **[LSTM Stock](lstm-stock/)** | Time-series forecasting experiments. | TensorFlow, LSTM |
+| **[Mechanistic Interpretability](mechanistic-interpretability/)** | Transformer Lens and DPO experiments. | TransformerLens, PyTorch |
+| **[Rankings Predictor](rankings-predictor/)** | Tournament ranking prediction model. | Keras, Pandas |
+| **[SNN](snn/)** | Spiking Neural Network experiments. | SNN |
 
-Replace `<project>` with the folder name (for example, `atariRL` or `Agents/LangChainAgents`). Some projects require extra system packages (CUDA, ffmpeg, etc.) — see the project README.
+## 🛠️ General Setup
 
-## Contributing
+Most projects are self-contained. To get started:
 
-- File issues for bugs or feature requests.
-- When submitting PRs: keep changes limited to one project when possible and include a short test or example demonstrating the change.
-- Follow the existing code style (4-space indent). Run linters/tests in the subproject if present.
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/yourusername/Deep-learning.git
+    cd Deep-learning
+    ```
 
-## Data and artifacts
+2.  **Navigate to a project:**
+    ```bash
+    cd agentic-misalignment
+    ```
 
-Large datasets, logs, and model weights are intentionally git-ignored. Check each project's `.gitignore` and `data/` or `saved_models/` directories for expected artifact locations. If a project requires external downloads, the project README will usually include links or scripts.
+3.  **Create a virtual environment:**
+    ```bash
+    python -m venv .venv
+    # Windows
+    .venv\Scripts\activate
+    # Mac/Linux
+    source .venv/bin/activate
+    ```
 
-## Contact / Questions
+4.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-If something is unclear, open an issue with the project name and a short reproduction step. Maintainers will triage according to available context.
+## 🤝 Contributing
+
+Open to collaboration! Please open an issue or submit a PR for any improvements.
